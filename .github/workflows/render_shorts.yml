@@ -50,10 +50,10 @@ jobs:
         with:
           python-version: "3.11"
       - name: Generate content CSV
-          run: |
-           if [ -f generate_csv.py ]; then
-            python3 generate_csv.py
-           fi
+           run: |
+            if generate_csv.py; then
+             python3 generate_csv.py
+            fi
 
       - name: Inspect CSV header and rows
         run: |
