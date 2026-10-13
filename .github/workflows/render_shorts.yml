@@ -127,15 +127,15 @@ jobs:
               open("content_batch.csv", newline="", encoding="utf-8")))
           if not rows:
               sys.exit("::error::CSV has no data rows")
-            csv_orients = {r.get("orientation", "").strip().lower() for r in rows}
-            invalid = csv_orients - {"", "vertical", "horizontal"}
-            if invalid:
+          csv_orients = {r.get("orientation", "").strip().lower() for r in rows}
+          invalid = csv_orients - {"", "vertical", "horizontal"}
+          if invalid:
               sys.exit(f"::error::CSV has invalid orientations: {invalid}")
-            explicit_orients = csv_orients - {""}
-            if len(explicit_orients) > 1:
+          explicit_orients = csv_orients - {""}
+          if len(explicit_orients) > 1:
               print("::notice::Rendering mixed orientations from per-row CSV values")
               csv_orient = "vertical"  # fallback only for rows without a value
-            else:
+          else:
               csv_orient = next(iter(explicit_orients), "vertical")
           env_orient = os.environ.get("SAEM_ORIENTATION", "vertical").lower()
           if csv_orient != env_orient:
@@ -271,11 +271,15 @@ jobs:
   merge_artifacts:
     needs: [validate, render]
     runs-on: ubuntu-latest
-    if: always()
+    if: always() && needs.validate.result == 'success' && (needs.render.result == 'success' || needs.render.result == 'failure')
     steps:
       - uses: actions/checkout@v4
 
+      - name: Prepare artifact directories
+        run: mkdir -p merged_output final_output
+
       - name: Download all shard artifacts
+        continue-on-error: true
         uses: actions/download-artifact@v4
         with:
           path: merged_output
@@ -283,9 +287,8 @@ jobs:
       - name: Flatten artifacts
         run: |
           echo "::group::Flatten"
-          mkdir -p final_output
-          find merged_output -name "*.mp4" -exec cp {} final_output/ \;
-          find merged_output -name "*.json" -exec cp {} final_output/ \;
+          find merged_output -type f \( -name "*.mp4" -o -name "*.json" \) \
+            -exec cp {} final_output/ \;
           echo "::endgroup::"
 
       - name: Tally final output
