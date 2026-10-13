@@ -49,9 +49,11 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Generate latest content_batch.csv from generator script
-        run: |
-          python3 generate_csv.py
+      - name: Generate content CSV
+          run: |
+           if [ -f generate_csv.py ]; then
+            python3 generate_csv.py
+           fi
 
       - name: Inspect CSV header and rows
         run: |
