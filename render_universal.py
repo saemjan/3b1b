@@ -1288,6 +1288,8 @@ class UniversalPhysicsScene(VoiceoverMovingCameraScene):
                 return self._prim_brace(item)
             if itype in ("arc", "angle", "angle_arc"):
                 return self._prim_arc(item)
+            if itype == "secant_tangent":
+                return self._prim_secant_tangent(item)
             if itype in ("graph", "function", "curve"):
                 return self._prim_graph(item)
             if itype in ("shape", "lens", "circle", "rectangle",
@@ -1542,6 +1544,95 @@ class UniversalPhysicsScene(VoiceoverMovingCameraScene):
         g = axes.plot(lambda x: eval_expr(expr, x),
                       x_range=[xr[0], xr[1]], color=color, stroke_width=4)
         return VGroup(axes, g)
+
+    def _prim_secant_tangent(self, item):
+        """Animate a secant approaching the tangent for constant acceleration."""
+        x_range = item.get("x_range", [0.0, 4.0])
+        y_range = item.get("y_range", [0.0, 8.0])
+        x_min, x_max = map(float, x_range)
+        y_min, y_max = map(float, y_range)
+        acceleration = float(item.get("acceleration", 1.0))
+        time_at = float(item.get("time_at", 2.4))
+        period = max(4.0, float(item.get("period", 10.0)))
+        delta_start = max(0.1, float(item.get("delta_start", 1.5)))
+        delta_end = max(0.02, float(item.get("delta_end", 0.08)))
+        x_length = float(item.get("x_length", 6.4))
+        y_length = float(item.get("y_length", 4.2))
+        center = to_3d(item.get("center", [0.0, 0.0, 0.0]))
+        gt = self.global_time
+
+        def position(t):
+            return 0.5 * acceleration * t * t
+
+        axes = Axes(
+            x_range=[x_min, x_max, 1],
+            y_range=[y_min, y_max, 2],
+            x_length=x_length,
+            y_length=y_length,
+            axis_config={"color": COLOR["muted"], "stroke_width": 1.7},
+        ).move_to(center)
+        curve = axes.plot(
+            position, x_range=[x_min, x_max],
+            color=COLOR["white"], stroke_width=3,
+        )
+
+        def interval():
+            phase = (gt.get_value() % period) / period
+            return delta_end + (delta_start - delta_end) * (1.0 - phase)
+
+        def earlier_time():
+            return max(x_min, time_at - interval())
+
+        secant = always_redraw(
+            lambda: Line(
+                axes.c2p(earlier_time(), position(earlier_time())),
+                axes.c2p(time_at, position(time_at)),
+                color=COLOR["accent"], stroke_width=3,
+            )
+        )
+        tangent_half_width = min(0.65, (x_max - x_min) / 4.0)
+        tangent = always_redraw(
+            lambda: Line(
+                axes.c2p(
+                    max(x_min, time_at - tangent_half_width),
+                    position(time_at) - acceleration * time_at *
+                    min(tangent_half_width, time_at - x_min),
+                ),
+                axes.c2p(
+                    min(x_max, time_at + tangent_half_width),
+                    position(time_at) + acceleration * time_at *
+                    min(tangent_half_width, x_max - time_at),
+                ),
+                color=COLOR["force"], stroke_width=3,
+            )
+        )
+        current_point = Dot(
+            axes.c2p(time_at, position(time_at)),
+            radius=0.075, color=COLOR["force"],
+        )
+        earlier_point = always_redraw(
+            lambda: Dot(
+                axes.c2p(earlier_time(), position(earlier_time())),
+                radius=0.055, color=COLOR["accent"],
+            )
+        )
+        interval_label = always_redraw(
+            lambda: Text(
+                f"Δt = {interval():.2f} s",
+                font_size=20, color=COLOR["accent"],
+            ).move_to(center + np.array([0.0, -y_length / 2.0 - 0.55, 0.0]))
+        )
+        tangent_label = Text(
+            "tangent = instantaneous speed",
+            font_size=17, color=COLOR["force"],
+        ).move_to(center + np.array([0.0, y_length / 2.0 + 0.55, 0.0]))
+        time_label = Text(
+            "time t (s)", font_size=16, color=COLOR["muted"],
+        ).move_to(center + np.array([0.0, -y_length / 2.0 - 0.95, 0.0]))
+        return VGroup(
+            axes, curve, secant, tangent, current_point, earlier_point,
+            interval_label, tangent_label, time_label,
+        )
 
     def _prim_shape(self, item):
         color = resolve_color(item)

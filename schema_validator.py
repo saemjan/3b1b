@@ -62,7 +62,7 @@ KNOWN_PRIMITIVES = {
     "line", "rod", "segment",
     "arc", "angle", "angle_arc",
     "brace",
-    "graph", "function", "curve",
+    "graph", "function", "curve", "secant_tangent",
     "shape", "lens", "circle", "rectangle", "ellipse", "polygon",
     "text", "group",
     # Motion

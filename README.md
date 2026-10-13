@@ -216,7 +216,11 @@ Output: output_shorts/feynman_d1_01_atoms_final.mp4
 
 ### 3Blue1Brown-style Feynman demo
 
-A concrete example built from Feynman's chapter on speed is included at [examples/feynman_speed_demo.csv](examples/feynman_speed_demo.csv). It follows the same schema as the production pipeline and is intentionally tuned toward the clean, one-idea-at-a-time teaching pattern used by 3Blue1Brown and Feynman.
+A short, original explanation inspired by the instantaneous-speed topic in
+Feynman's lectures is included at [examples/feynman_speed_demo.csv](examples/feynman_speed_demo.csv).
+It uses the production CSV schema and animates a secant line converging to a
+tangent as the time interval shrinks. The explanation is newly written rather
+than copied from the lectures.
 
 ### Dual-format concept generator
 
@@ -261,7 +265,9 @@ python3 schema_validator.py content_batch.csv
 python3 batch_runner.py --only feynman_demo_speed_limit --draft
 ```
 
-This example is based on the concept: “Speed Is a Limit, Not a Ratio.” The visual grammar is built around a graph, a tangent, and a single focused sentence, so the short feels like an elegant lecture rather than a dense slide deck.
+This example explains why instantaneous speed is a limit of average speed.
+Its secant-to-tangent visual is an animation, not a static graph, and keeps
+the idea focused rather than presenting a dense slide deck.
 
 ---
 
@@ -403,6 +409,7 @@ line / rod / segment Straight line
 arc / angle / angle_arc Circular arc
 brace Curly brace between two points
 graph / function / curve Axes + plotted expression
+secant_tangent Secant line converging to the tangent for constant acceleration
 shape / lens / circle / rectangle / ellipse / polygon Geometric figures
 text Plain or LaTeX text
 group Container for child primitives
