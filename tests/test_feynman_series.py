@@ -16,6 +16,41 @@ SPEC.loader.exec_module(SERIES)
 
 
 class FeynmanSeriesAnimationTests(unittest.TestCase):
+    def test_complete_projectile_demo_csv_builds_and_updates(self):
+        demo_path = os.path.join(
+            os.path.dirname(__file__), '..', 'examples',
+            'projectile_complete_object.csv',
+        )
+        with open(demo_path, newline='', encoding='utf-8') as demo_file:
+            rows = list(csv.DictReader(demo_file))
+
+        self.assertEqual(len(rows), 1)
+        row = rows[0]
+        self.assertEqual(row['orientation'], 'horizontal')
+        self.assertEqual(row['target_duration_sec'], '60')
+        visuals = json.loads(row['visual_data_json'])
+        model = next(item for item in visuals
+                     if item.get('id') == 'model')
+
+        scene = UniversalPhysicsScene(scene_kwargs={})
+        animated_object = scene._prim_projectile_motion(model)
+        self.assertEqual(len(animated_object), 10)
+        animated_object.update(0.1)
+        scene.global_time.set_value(1.2)
+        animated_object.update(0.1)
+
+    def test_projectile_animation_rejects_invalid_physics(self):
+        scene = UniversalPhysicsScene(scene_kwargs={})
+        for invalid in (
+            {'v0': 0},
+            {'g': -1},
+            {'angle': 90},
+            {'period': float('nan')},
+        ):
+            with self.subTest(invalid=invalid):
+                with self.assertRaises(ValueError):
+                    scene._prim_projectile_motion(invalid)
+
     def test_each_storyboard_builds_and_updates(self):
         rows = SERIES.build_batch()
         self.assertEqual(len(rows), 20)

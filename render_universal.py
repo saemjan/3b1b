@@ -2557,29 +2557,151 @@ class UniversalPhysicsScene(VoiceoverMovingCameraScene):
 
     def _prim_projectile_motion(self, item):
         v0 = float(item.get("v0", 5.0))
-        angle = float(item.get("angle", 45)) * DEGREES
+        angle_degrees = float(item.get("angle", 45))
+        angle = angle_degrees * DEGREES
         g = float(item.get("g", 9.8))
+        requested_period = float(item.get("period", 0.0))
+        if (not all(np.isfinite(value) for value in (
+                    v0, angle_degrees, g, requested_period))
+                or v0 <= 0 or g <= 0
+                or not 0 < angle_degrees < 90
+                or requested_period < 0):
+            raise ValueError(
+                "projectile_motion requires v0 > 0, g > 0, "
+                "an angle strictly between 0 and 90 degrees, "
+                "and period >= 0."
+            )
+
         color = resolve_color(item)
         gt = self.global_time
-        t_max = 2 * v0 * np.sin(angle) / g
+        vx = v0 * np.cos(angle)
+        vy0 = v0 * np.sin(angle)
+        flight_time = max(0.05, 2 * vy0 / g)
+        range_x = max(0.05, vx * flight_time)
+        height = vy0 ** 2 / (2 * g)
+        frame_width = config.frame_width
+        frame_height = config.frame_height
+        scale = min(
+            frame_width * 0.72 / range_x,
+            frame_height * 0.28 / max(height, 0.05),
+        )
+        left = -range_x * scale / 2
+        baseline_y = -1.2
+        period = max(requested_period, flight_time + 1.5)
 
         def _traj(t):
-            x = v0 * np.cos(angle) * t
-            y = v0 * np.sin(angle) * t - 0.5 * g * t ** 2
-            return [x, y]
+            x = vx * t
+            y = max(0.0, vy0 * t - 0.5 * g * t ** 2)
+            return np.array([left + x * scale, baseline_y + y * scale, 0.0])
 
-        pts = [_traj(t) for t in np.linspace(0, t_max, 100)]
-        path = VMobject().set_points_as_corners(
-            [np.array([p[0], p[1], 0]) for p in pts]
-        ).set_stroke(color, width=3)
+        sample_times = np.linspace(0, flight_time, 100)
+        pts = [_traj(t) for t in sample_times]
+        left_x = left - 0.45
+        right_x = left + range_x * scale + 0.55
+        x_axis = Arrow(
+            [left_x, baseline_y, 0],
+            [right_x, baseline_y, 0],
+            buff=0,
+            color=COLOR["muted"],
+            stroke_width=1.8,
+            max_tip_length_to_length_ratio=0.04,
+        )
+        y_axis = Arrow(
+            [left_x, baseline_y - 0.15, 0],
+            [left_x, baseline_y + max(0.9, height * scale + 0.35), 0],
+            buff=0,
+            color=COLOR["muted"],
+            stroke_width=1.8,
+            max_tip_length_to_length_ratio=0.08,
+        )
+        axis_labels = VGroup(
+            Text("x", font_size=18, color=COLOR["muted"])
+            .next_to(x_axis.get_end(), RIGHT, buff=0.08),
+            Text("y", font_size=18, color=COLOR["muted"])
+            .next_to(y_axis.get_end(), UP, buff=0.08),
+        )
+        guide = VMobject().set_points_as_corners(pts).set_stroke(
+            COLOR["muted"], width=2.0, opacity=0.5,
+        )
 
-        def _ball_pos():
-            t = min(gt.get_value() % (t_max + 1), t_max)
-            p = _traj(t)
-            return np.array([p[0], p[1], 0])
-        ball = always_redraw(lambda: Dot(_ball_pos(), radius=0.15,
-                                          color=COLOR["accent"]))
-        return VGroup(path, ball)
+        def current_time():
+            return min(gt.get_value() % period, flight_time)
+
+        def ball_position():
+            return _traj(current_time())
+
+        def trail():
+            index = min(
+                len(pts) - 1,
+                int(current_time() / flight_time * (len(pts) - 1)),
+            )
+            return VMobject().set_points_as_corners(pts[:index + 1]) \
+                .set_stroke(color, width=3.2, opacity=0.95)
+
+        velocity_scale = min(0.22, 0.72 * scale / max(v0, 0.05))
+
+        def velocity_arrow():
+            t = current_time()
+            velocity = np.array([vx, vy0 - g * t, 0.0])
+            start = ball_position()
+            end = start + velocity * velocity_scale
+            return Arrow(
+                start, end, buff=0, color=COLOR["neg"],
+                stroke_width=3.0,
+                max_tip_length_to_length_ratio=0.22,
+            )
+
+        def force_arrow():
+            start = ball_position() + RIGHT * 0.18
+            return Arrow(
+                start, start + DOWN * 0.78, buff=0,
+                color=COLOR["force"], stroke_width=3.0,
+                max_tip_length_to_length_ratio=0.22,
+            )
+
+        def body():
+            center = ball_position()
+            sphere = Circle(
+                radius=0.18, color=color, fill_color=color,
+                fill_opacity=0.96, stroke_width=1.6,
+            ).move_to(center)
+            highlight = Circle(
+                radius=0.045, color=COLOR["white"],
+                fill_color=COLOR["white"], fill_opacity=0.85,
+                stroke_width=0,
+            ).move_to(center + np.array([-0.055, 0.06, 0]))
+            center_of_mass = Dot(center, radius=0.035, color=COLOR["bg"])
+            return VGroup(sphere, highlight, center_of_mass)
+
+        def state_label():
+            t = current_time()
+            vertical_velocity = vy0 - g * t
+            label = Text(
+                f"t = {t:.2f} s    vx = {vx:.2f} m/s    "
+                f"vy = {vertical_velocity:.2f} m/s",
+                font_size=17,
+                color=COLOR["white"],
+            )
+            if label.width > frame_width * 0.88:
+                label.scale_to_fit_width(frame_width * 0.88)
+            label.move_to([0, baseline_y - 1.05, 0])
+            return label
+
+        vector_labels = VGroup(
+            always_redraw(
+                lambda: Text("v", font_size=20, color=COLOR["neg"])
+                .next_to(velocity_arrow().get_end(), RIGHT, buff=0.08)
+            ),
+            always_redraw(
+                lambda: Text("mg", font_size=18, color=COLOR["force"])
+                .next_to(force_arrow().get_end(), RIGHT, buff=0.08)
+            ),
+        )
+        return VGroup(
+            x_axis, y_axis, axis_labels, guide, always_redraw(trail),
+            always_redraw(velocity_arrow), always_redraw(force_arrow),
+            always_redraw(body), vector_labels, always_redraw(state_label),
+        )
 
     # ============================================================ day 5+
     def _prim_damped_oscillator(self, item):

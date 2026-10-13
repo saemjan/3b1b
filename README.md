@@ -222,6 +222,34 @@ It uses the production CSV schema and animates a secant line converging to a
 tangent as the time interval shrinks. The explanation is newly written rather
 than copied from the lectures.
 
+### Whole-object force-and-motion demo
+
+[examples/projectile_complete_object.csv](examples/projectile_complete_object.csv)
+is a ready-to-render, 60-second example of a thrown sphere. The renderer
+computes its trajectory from the launch speed, angle, and gravitational
+acceleration, then synchronizes the visible body and center, path, velocity,
+weight vector, and live velocity/time values. The example names its assumptions
+(translation only and no air resistance) and marks vectors as schematic.
+
+```bash
+python3 schema_validator.py examples/projectile_complete_object.csv
+python3 batch_runner.py --csv examples/projectile_complete_object.csv --dry-run
+python3 batch_runner.py --csv examples/projectile_complete_object.csv \
+  --only projectile_complete_object_demo --draft
+```
+
+The design follows standard free-body-diagram practice: isolate one body and
+show only external forces acting on it. Keep the physical model explicit, and
+use coordinated views (object, force/motion annotations, equations) to explain
+the same event rather than adding decorative motion. For reference, see
+[OpenStax on free-body diagrams](https://openstax.org/books/university-physics-volume-1/pages/5-7-drawing-free-body-diagrams),
+Ainsworth's framework for learning with multiple representations
+[doi:10.1016/j.learninstruc.2006.03.001](https://doi.org/10.1016/j.learninstruc.2006.03.001),
+and Tversky, Morrison, and Betrancourt's review of when animation facilitates
+understanding [doi:10.1006/ijhc.2002.1017](https://doi.org/10.1006/ijhc.2002.1017).
+These sources inform general explanatory principles; the visuals and wording
+in this example are original.
+
 ### Dual-format concept generator
 
 The repo now includes a generalized generator for arbitrary ideas and problems:
@@ -478,7 +506,8 @@ exponential_atmosphere Particles with exponential density
 energy_landscape Potential well with a ball
 angular_measurement Angle arc with label
 crystal_lattice Grid of atoms
-projectile_motion Ballistic trajectory with moving ball
+projectile_motion Calculated projectile path with a full sphere, center marker,
+velocity and weight vectors, and live state values
 
 Advanced physics primitives
 
