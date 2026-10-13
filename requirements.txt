@@ -1,0 +1,42 @@
+# ---------- Core Animation Engine ----------
+manim==0.18.1
+numpy==1.26.4
+scipy==1.11.4
+Pillow==10.2.0
+
+# ---------- Manim Dependencies ----------
+pycairo==1.26.0
+pydub>=0.25.1
+rich==13.7.1
+tqdm==4.66.2
+click==8.1.7
+pyyaml==6.0.1
+
+# ---------- Voice Cloning Stack (XTTS-v2) ----------
+setuptools==69.5.1
+Cython==3.0.10
+torch==2.2.2
+torchaudio==2.2.2
+soundfile==0.12.1
+TTS==0.22.0
+transformers==4.38.2
+huggingface_hub==0.22.2
+coqpit==0.0.16
+trainer==0.0.36
+
+# ---------- Voiceover sync ----------
+manim-voiceover==0.3.5
+gTTS==2.5.1
+
+# ---------- Optional dependencies ----------
+# NOTE: manim's Cairo backend (grout) pins networkx<3.0.0.
+# Do NOT upgrade to 3.x or pip resolution will fail.
+networkx==2.8.8
+
+imageio-ffmpeg==0.5.1
+av==12.0.0
+
+# ---------- Development & Utilities ----------
+# NOTE: manim-voiceover 0.3.5 pins python-dotenv<0.22.0.
+python-dotenv==0.21.1
+pytest==8.1.1
