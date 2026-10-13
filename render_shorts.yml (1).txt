@@ -1,0 +1,293 @@
+name: Render Physics Shorts
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "content_batch.csv"
+      - "generate_csv.py"
+      - "generate_audio.py"
+      - "render_universal.py"
+      - "batch_runner.py"
+      - "schema_validator.py"
+      - "requirements.txt"
+      - ".github/workflows/render_shorts.yml"
+  workflow_dispatch:
+    inputs:
+      only:
+        description: "Comma-separated video_ids to render (blank = all)"
+        required: false
+        default: ""
+      orientation:
+        description: "vertical | horizontal"
+        required: false
+        default: "horizontal"
+      quality:
+        description: "draft | 720p | 1080p | 4k"
+        required: false
+        default: "1080p"
+
+env:
+  PYTHONUNBUFFERED: "1"
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  COQUI_TOS_AGREED: "1"
+  SAEM_ORIENTATION: ${{ inputs.orientation || 'horizontal' }}
+  HF_HOME: ${{ github.workspace }}/.hf_cache
+
+jobs:
+  # ========================================================== validate
+  validate:
+    runs-on: ubuntu-latest
+    outputs:
+      row_count: ${{ steps.count.outputs.rows }}
+      video_ids: ${{ steps.count.outputs.ids }}
+      orientation: ${{ steps.orient.outputs.value }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Inspect CSV header and rows
+        run: |
+          echo "::group::CSV header"
+          head -1 content_batch.csv
+          echo "::endgroup::"
+
+          echo "::group::Row summary"
+          python3 - <<'PY'
+          import csv
+          with open("content_batch.csv", newline="", encoding="utf-8") as f:
+              r = csv.reader(f)
+              header = next(r)
+              rows = list(r)
+          print(f"Columns: {len(header)}")
+          print(f"Rows:    {len(rows)}")
+          for i, row in enumerate(rows, start=2):
+              vid = row[0] if row else "<blank>"
+              orient = row[13] if len(row) > 13 else "<missing>"
+              print(f"  row {i:02d}  {vid:50s}  orientation={orient}")
+          PY
+          echo "::endgroup::"
+
+      - name: Extract row count and video IDs
+        id: count
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import csv
+          with open("content_batch.csv", newline="", encoding="utf-8") as f:
+              rows = list(csv.DictReader(f))
+          ids = ",".join(r["video_id"] for r in rows)
+          print(f"rows={len(rows)}")
+          print(f"ids={ids}")
+          PY
+
+      - name: Confirm orientation agreement
+        id: orient
+        run: |
+          python3 - <<'PY'
+          import csv, os, sys
+          rows = list(csv.DictReader(
+              open("content_batch.csv", newline="", encoding="utf-8")))
+          if not rows:
+              sys.exit("::error::CSV has no data rows")
+          csv_orients = {r.get("orientation", "vertical").lower() for r in rows}
+          if len(csv_orients) != 1:
+              sys.exit(f"::error::CSV has mixed orientations: {csv_orients}")
+          csv_orient = csv_orients.pop()
+          env_orient = os.environ.get("SAEM_ORIENTATION", "vertical").lower()
+          if csv_orient != env_orient:
+              print(f"::warning::CSV={csv_orient} workflow={env_orient} "
+                    f"(using CSV value)")
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"value={csv_orient}\n")
+          PY
+
+      - name: Run schema validator
+        run: |
+          echo "::group::schema_validator.py output"
+          if ! python3 schema_validator.py content_batch.csv; then
+            echo "::error file=content_batch.csv,title=Schema validation failed::See group above for details"
+            echo "::endgroup::"
+            exit 1
+          fi
+          echo "::endgroup::"
+
+      - name: Notify success
+        run: |
+          echo "::notice title=Validation OK::${{ steps.count.outputs.rows }} rows ready to render"
+
+  # ========================================================== render (4-way shard)
+  render:
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    env:
+      SAEM_ORIENTATION: ${{ needs.validate.outputs.orientation }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install system dependencies
+        run: |
+          echo "::group::apt-get install"
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            ffmpeg \
+            texlive-latex-base texlive-latex-recommended \
+            texlive-latex-extra texlive-science \
+            texlive-fonts-recommended dvisvgm \
+            libcairo2-dev libpango1.0-dev libsndfile1 \
+            build-essential pkg-config
+          echo "::endgroup::"
+
+      - name: Cache pip + HF model weights
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pip
+            ${{ github.workspace }}/.hf_cache
+          key: ${{ runner.os }}-py311-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-py311-
+
+      - name: Install Python dependencies
+        run: |
+          echo "::group::pip install"
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt \
+            --index-url https://download.pytorch.org/whl/cpu \
+            --extra-index-url https://pypi.org/simple
+          echo "::endgroup::"
+
+      - name: Mask voice sample reference
+        run: |
+          if [ -f saem_voice_sample.wav ]; then
+            echo "::add-mask::saem_voice_sample.wav"
+            echo "::notice::Voice reference present"
+          else
+            echo "::warning title=No voice sample::saem_voice_sample.wav is missing; falling back to manifest durations"
+          fi
+
+      - name: Render shard ${{ matrix.shard }} of 4
+        id: render
+        run: |
+          echo "::group::batch_runner.py shard ${{ matrix.shard }}"
+          python3 batch_runner.py \
+            --chunk ${{ matrix.shard }} \
+            --total-chunks 4 \
+            --retries 2 \
+            --log-file "output_shorts/runlog_shard_${{ matrix.shard }}.json"
+          rc=$?
+          echo "::endgroup::"
+          exit $rc
+
+      - name: Count rendered videos
+        id: tally
+        if: always()
+        run: |
+          COUNT=$(find output_shorts -maxdepth 1 -name '*_final.mp4' 2>/dev/null | wc -l)
+          echo "count=${COUNT}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shard-${{ matrix.shard }}
+          path: |
+            output_shorts/*.mp4
+            output_shorts/*.json
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Job summary for shard ${{ matrix.shard }}
+        if: always()
+        run: |
+          SHARD=${{ matrix.shard }}
+          COUNT=${{ steps.tally.outputs.count }}
+          ORIENT=${{ needs.validate.outputs.orientation }}
+          {
+            echo "### Shard ${SHARD} — summary"
+            echo ""
+            echo "| Field | Value |"
+            echo "|---|---|"
+            echo "| Orientation | \`${ORIENT}\` |"
+            echo "| Rendered MP4s | ${COUNT} |"
+            echo "| Runlog | \`output_shorts/runlog_shard_${SHARD}.json\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ========================================================== merge
+  merge_artifacts:
+    needs: [validate, render]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all shard artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: merged_output
+
+      - name: Flatten artifacts
+        run: |
+          echo "::group::Flatten"
+          mkdir -p final_output
+          find merged_output -name "*.mp4" -exec cp {} final_output/ \;
+          find merged_output -name "*.json" -exec cp {} final_output/ \;
+          echo "::endgroup::"
+
+      - name: Tally final output
+        id: final
+        run: |
+          MP4S=$(find final_output -name "*.mp4" 2>/dev/null | wc -l)
+          SIZE=$(du -sh final_output 2>/dev/null | cut -f1 || echo "0")
+          echo "mp4s=${MP4S}" >> "$GITHUB_OUTPUT"
+          echo "size=${SIZE}" >> "$GITHUB_OUTPUT"
+          echo "::notice title=Final tally::${MP4S} MP4s, ${SIZE} total"
+
+      - name: Upload merged bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: physics-shorts-bundle
+          path: final_output/
+          retention-days: 7
+
+      - name: Final job summary
+        run: |
+          ORIENT=${{ needs.validate.outputs.orientation }}
+          ROWS=${{ needs.validate.outputs.row_count }}
+          MP4S=${{ steps.final.outputs.mp4s }}
+          SIZE=${{ steps.final.outputs.size }}
+          {
+            echo "## Physics Shorts — Run ${{ github.run_number }}"
+            echo ""
+            echo "**Source:** Feynman Lectures Vol. II"
+            echo ""
+            echo "| Field | Value |"
+            echo "|---|---|"
+            echo "| Rows queued | ${ROWS} |"
+            echo "| Orientation | \`${ORIENT}\` |"
+            echo "| MP4s rendered | **${MP4S}** |"
+            echo "| Bundle size | ${SIZE} |"
+            echo "| Commit | \`${{ github.sha }}\` |"
+            echo "| Trigger | ${{ github.event_name }} |"
+            echo ""
+            if [ "${MP4S}" -eq 0 ]; then
+              echo "> [!WARNING]"
+              echo "> No MP4s were produced. Check the shard summaries above."
+            else
+              echo "> [!NOTE]"
+              echo "> Download the \`physics-shorts-bundle\` artifact to retrieve all videos."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
