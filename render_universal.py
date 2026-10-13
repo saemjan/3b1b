@@ -36,6 +36,7 @@ import textwrap
 import numpy as np
 from manim import *
 from manim import rate_functions as rf
+from geometry_engine import add_rigid_motion, build_geometry
 from physics_simulation import accelerations, simulate_system
 
 # ============================================================ voiceover
@@ -1367,6 +1368,8 @@ class UniversalPhysicsScene(VoiceoverMovingCameraScene):
                 return self._prim_projectile_motion(item)
             if itype == "physics_simulation":
                 return self._prim_physics_simulation(item)
+            if itype == "geometry":
+                return self._prim_geometry(item)
             if itype == "damped_oscillator":
                 return self._prim_damped_oscillator(item)
             if itype == "radiating_wave":
@@ -2557,6 +2560,12 @@ class UniversalPhysicsScene(VoiceoverMovingCameraScene):
                 y = (i - (rows - 1) / 2) * spacing
                 dots.add(Dot([x, y, 0], radius=0.08, color=color))
         return dots
+
+    def _prim_geometry(self, item):
+        geometry = build_geometry(item, allow_3d=False)
+        return add_rigid_motion(
+            geometry, item, dimension=item.get("dimension", 2),
+        )
 
     def _prim_physics_simulation(self, item):
         bodies = item.get("bodies")
@@ -4185,23 +4194,44 @@ class Universal3DPhysicsScene(VoiceoverThreeDScene):
         self.sk = scene_kwargs or {}
         self._watermark = None
 
+    def _build_3d_primitive(self, item):
+        primitive_type = str(item.get("type", "")).lower()
+        if primitive_type == "geometry":
+            dimension = item.get("dimension", 3)
+            if dimension not in (1, 2, 3):
+                raise ValueError("geometry dimension must be 1, 2, or 3.")
+            mob = build_geometry(item, allow_3d=True)
+            return add_rigid_motion(mob, item, dimension=dimension)
+        if primitive_type == "text":
+            position = to_3d(item.get("pos", [0, 0, 0]))
+            return Text(
+                str(item.get("text", item.get("label", ""))),
+                font_size=float(item.get("font_size", 24)),
+                color=resolve_color(item),
+            ).move_to(position)
+        raise ValueError(
+            f"Unsupported 3D primitive '{primitive_type}'; use geometry or text."
+        )
+
     def construct(self):
         sk = self.sk
-        no_voiceover = bool(sk.get("no_voiceover", False))
-        render_only = bool(sk.get("render_only", False))
-        use_voiceover = (HAS_VOICEOVER and GTTSService
-                         and not no_voiceover and not render_only)
-        if use_voiceover:
-            try:
-                self.set_speech_service(GTTSService(lang="en", tld="com"))
-            except Exception:
-                pass
-
         branding_on = sk.get("branding", "on") != "off"
         outro_dur = float(sk.get("outro_duration", 5.0))
-
-        self.set_camera_orientation(phi=70 * DEGREES, theta=-50 * DEGREES)
-        self.begin_ambient_camera_rotation(rate=0.15)
+        duration = float(sk.get("duration", 180.0))
+        camera_rate = float(sk.get("camera_rotation_rate", 0.0))
+        if (not np.isfinite(duration) or duration <= 0
+                or not np.isfinite(outro_dur) or outro_dur < 0
+                or not np.isfinite(camera_rate)):
+            raise ValueError(
+                "3D scene duration and outro must be finite and positive; "
+                "camera rotation rate must be finite."
+            )
+        self.set_camera_orientation(
+            phi=float(sk.get("camera_phi", 70)) * DEGREES,
+            theta=float(sk.get("camera_theta", -50)) * DEGREES,
+        )
+        if camera_rate:
+            self.begin_ambient_camera_rotation(rate=camera_rate)
 
         if branding_on:
             wm = SaemLabsBranding._build_watermark()
@@ -4215,14 +4245,25 @@ class Universal3DPhysicsScene(VoiceoverThreeDScene):
                      color=WHITE).to_corner(UL, buff=0.8)
             self.add_fixed_in_frame_mobjects(t)
 
-        axes = ThreeDAxes(x_range=[-5, 5], y_range=[-5, 5], z_range=[-5, 5])
-        self.add(axes)
-        helix = ParametricFunction(
-            lambda t: np.array([np.cos(2 * t) * 2, np.sin(2 * t) * 2,
-                                t / 3 - 2]),
-            t_range=[-4, 4], color=COLOR["accent"], stroke_width=4,
-        )
-        self.play(Create(helix), run_time=4.0)
+        if sk.get("show_axes", True):
+            axes = ThreeDAxes(
+                x_range=[-5, 5],
+                y_range=[-5, 5],
+                z_range=[-5, 5],
+                axis_config={"color": COLOR["muted"]},
+            )
+            self.add(axes)
+
+        visual_data = safe_json_loads(sk.get("visual_data_json", "[]"))
+        if not isinstance(visual_data, list):
+            raise ValueError("visual_data_json for a 3D scene must be a list.")
+        visuals = VGroup()
+        for item in visual_data:
+            if not isinstance(item, dict):
+                raise ValueError("Every 3D visual primitive must be an object.")
+            visuals.add(self._build_3d_primitive(item))
+        if len(visuals):
+            self.play(FadeIn(visuals, shift=UP * 0.15), run_time=0.8)
 
         equations = safe_json_loads(sk.get("equations_json", "[]"))
         if equations:
@@ -4234,8 +4275,11 @@ class Universal3DPhysicsScene(VoiceoverThreeDScene):
             for eq in eq_group:
                 self.play(Write(eq), run_time=0.8)
 
-        self.wait(8.0)
-        self.stop_ambient_camera_rotation()
+        remaining = duration - outro_dur - self.renderer.time
+        if remaining > 0:
+            self.wait(remaining)
+        if camera_rate:
+            self.stop_ambient_camera_rotation()
         if self._watermark is not None:
             try:
                 self.remove(self._watermark)
@@ -4412,9 +4456,7 @@ def main():
 
     if scene is None:
         ct = args.concept_type.upper()
-        if ct == "3D":
-            scene = SaemLabs3DScene(scene_kwargs=scene_kwargs)
-        elif ct == "3D_HELIX":
+        if ct in ("3D", "3D_HELIX"):
             scene = Universal3DPhysicsScene(scene_kwargs=scene_kwargs)
         else:
             scene = UniversalPhysicsScene(scene_kwargs=scene_kwargs)

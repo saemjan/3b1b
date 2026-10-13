@@ -288,6 +288,52 @@ assumptions, derivation, narration, and storyboard reviewed for correctness.
 The example shows `v` and net `a` with explicitly schematic arrow lengths; do
 not interpret those display lengths as calibrated measurements.
 
+### Dimension-aware geometry
+
+The shared `geometry` primitive in [geometry_engine.py](./geometry_engine.py)
+and [render_universal.py](./render_universal.py) supports 1D, 2D, and 3D
+coordinates. One-dimensional points embed on the x-axis; 2D points embed in
+the xy-plane; 3D coordinates use xyz. Supported kinds are `point`, `points`,
+`segment`, `polyline`, `polygon`, `circle`, `ellipse`, `sphere`, `cube`,
+`cylinder`, and `cone`. Solid 3D kinds require a 3D scene (`concept_type=3D`);
+the 2D renderer rejects them explicitly. The 3D renderer now builds geometry
+from `visual_data_json` instead of substituting a hard-coded helix.
+
+Rigid transforms are optional and update the existing Manim object in place,
+rather than rebuilding its geometry every frame:
+
+```json
+{
+  "type": "geometry",
+  "id": "rotating_cube",
+  "dimension": 3,
+  "kind": "cube",
+  "side_length": 1.5,
+  "position": [0, 0, 0],
+  "motion": {
+    "velocity": [0, 0, 0],
+    "angular_velocity": 0.5,
+    "axis": [0, 1, 0]
+  }
+}
+```
+
+The
+[geometry dimensions example](./examples/geometry_dimensions_demo.csv)
+combines a 1D segment, 2D triangle, and rotating 3D cube:
+
+```bash
+python3 schema_validator.py examples/geometry_dimensions_demo.csv
+python3 batch_runner.py --csv examples/geometry_dimensions_demo.csv --dry-run
+python3 batch_runner.py --csv examples/geometry_dimensions_demo.csv \
+  --only geometry_dimensions_demo --draft
+```
+
+The builder is intentionally declarative and bounded (point-cloud entries are
+limited to 256 points); arbitrary meshes, deformable solids, and every possible
+geometric construction are not implied. Prefer one polyline/polygon primitive
+over hundreds of separate line objects where possible.
+
 ### Dual-format concept generator
 
 The repo now includes a generalized generator for arbitrary ideas and problems:

@@ -82,6 +82,7 @@ KNOWN_PRIMITIVES = {
     "beat_pattern", "mirror_scene", "medium_atoms",
     "falling_energy",
     "physics_simulation",
+    "geometry",
     # Day 5 advanced
     "field_by_opacity", "polar_pattern", "phase_portrait",
     "light_wave_slice", "sliced_wave", "spectral_sum", "stream_field",
