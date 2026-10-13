@@ -1,7 +1,7 @@
 """
 batch_runner.py — Subprocess orchestrator & FFmpeg audio/video stitcher.
 
-Reads content_batch.csv, for each row:
+Reads a selected CSV batch (content_batch.csv by default), for each row:
   1. Validates the CSV via schema_validator (pre-flight gate)
   2. Synthesizes voice + ambient pad via generate_audio.py (lazy import)
   3. Invokes render_universal.py as a subprocess
@@ -9,6 +9,7 @@ Reads content_batch.csv, for each row:
 
 Flags:
   --dry-run        Validate + list rows, no render
+  --csv PATH       Select an input batch (default: content_batch.csv)
   --only a,b,c     Only render these video_ids
     --format short|lecture|both
                                      Filter rows by the desired cut style
@@ -18,6 +19,7 @@ Flags:
   --total-chunks M Split into M parallel workers
   --retries K      Retry failing rows K times with exponential backoff
   --draft          Render at 480p15 for fast preview
+  --quality PRESET Override row quality (draft, 720p, 1080p, 4k, ...)
   --no-voiceover   Skip VoiceoverScene; use manifest durations
   --skip-audio     Generate silent placeholder audio (testing)
   --skip-stitch    Keep raw MP4 without FFmpeg mux
@@ -57,7 +59,7 @@ ensure_supported_python()
 # Paths and constants
 # ────────────────────────────────────────────────────────────────────────
 OUTPUT_DIR       = Path("output_shorts")
-CSV_FILE         = Path("content_batch.csv")
+DEFAULT_CSV_FILE = Path("content_batch.csv")
 VOICE_SAMPLE     = Path("saem_voice_sample.wav")
 MEDIA_DIR        = Path("media")
 TEMP_AUDIO       = Path("temp_audio")
@@ -67,6 +69,10 @@ FFMPEG_CRF       = "20"
 DEFAULT_FPS      = 30
 CLOSING_CARD_SEC = 5.0     # must match render_universal.py outro_duration
 MIN_VALID_MP4_MB = 1.0     # files smaller than this are treated as corrupt
+RENDER_QUALITIES = (
+    "draft", "720p", "1080p", "1080p60", "4k", "4k60",
+    "l", "m", "h", "h60", "k",
+)
 
 
 # ────────────────────────────────────────────────────────────────────────
@@ -189,6 +195,10 @@ def parse_args():
     )
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--only", type=str, default="")
+    p.add_argument("--csv", type=Path, default=DEFAULT_CSV_FILE,
+                   help="Input batch CSV (default: content_batch.csv).")
+    p.add_argument("--quality", choices=("", *RENDER_QUALITIES), default="",
+                   help="Override each row's quality preset.")
     p.add_argument("--format", choices=["short", "lecture", "both"],
                    default="both",
                    help="Target a one-minute short, a three-minute lecture, or both.")
@@ -216,7 +226,7 @@ def parse_args():
 # ────────────────────────────────────────────────────────────────────────
 # Pre-flight
 # ────────────────────────────────────────────────────────────────────────
-def preflight_csv() -> None:
+def preflight_csv(csv_file: Path) -> None:
     """Run schema_validator.validate_csv on the active CSV. Exit 1 on error."""
     try:
         from schema_validator import validate_csv
@@ -224,8 +234,8 @@ def preflight_csv() -> None:
         print(f"[WARN] Could not import schema_validator ({e}); "
               f"skipping pre-flight validation.")
         return
-    print(f"[{_ts()}] [preflight] Validating {CSV_FILE}…")
-    if not validate_csv(str(CSV_FILE)):
+    print(f"[{_ts()}] [preflight] Validating {csv_file}…")
+    if not validate_csv(str(csv_file)):
         print(f"[{_ts()}] [preflight] FATAL — schema validation failed. "
               f"Fix the CSV and retry.")
         sys.exit(1)
@@ -237,15 +247,16 @@ def preflight_csv() -> None:
 # ────────────────────────────────────────────────────────────────────────
 def process_batch():
     args = parse_args()
+    csv_file = args.csv
     OUTPUT_DIR.mkdir(exist_ok=True)
     TEMP_AUDIO.mkdir(exist_ok=True)
 
-    if not CSV_FILE.exists():
-        raise FileNotFoundError(f"CSV file '{CSV_FILE}' not found.")
+    if not csv_file.exists():
+        raise FileNotFoundError(f"CSV file '{csv_file}' not found.")
 
     # Pre-flight (unless we're in a hurry and just want to see the row list)
     if not args.dry_run:
-        preflight_csv()
+        preflight_csv(csv_file)
 
     if not VOICE_SAMPLE.exists():
         if args.skip_audio or args.dry_run:
@@ -257,7 +268,7 @@ def process_batch():
                 f"Place it in the repo root, or use --skip-audio."
             )
 
-    with CSV_FILE.open(encoding="utf-8") as f:
+    with csv_file.open(encoding="utf-8") as f:
         rows = list(csv.DictReader(f))
 
     target_orientation = {
@@ -338,6 +349,7 @@ def process_batch():
                     skip_stitch=args.skip_stitch,
                     orientation_override=args.orientation,
                     duration_override=args.duration,
+                    quality_override=args.quality,
                 )
                 runlog.append({
                     "video_id": vid_id, "status": "ok",
@@ -396,7 +408,8 @@ def _render_one(row: dict, vid_id: str, final_output: Path,
                 draft: bool = False, no_voiceover: bool = False,
                 skip_audio: bool = False, skip_stitch: bool = False,
                 orientation_override: str = "",
-                duration_override: float = 0.0):
+                duration_override: float = 0.0,
+                quality_override: str = ""):
     voice = pad = None
     raw_output = OUTPUT_DIR / f"{vid_id}_raw.mp4"
 
@@ -438,7 +451,8 @@ def _render_one(row: dict, vid_id: str, final_output: Path,
             "--beats_json",       str_val(row, "beats_json") or "[]",
             "--bindings_json",    str_val(row, "bindings_json") or "[]",
             "--concept_type",     str_val(row, "concept_type") or "GENERIC",
-            "--quality",          str_val(row, "quality") or "1080p",
+            "--quality",          quality_override
+                                  or str_val(row, "quality") or "1080p",
             "--orientation",      ori,
             "--duration",         f"{duration:.3f}",
             "--options_json",     json.dumps(options),
@@ -497,9 +511,14 @@ def _render_one(row: dict, vid_id: str, final_output: Path,
 
 
 def _make_silent_audio(row: dict, vid_id: str) -> tuple[str, str, float]:
-    """Generate a silent WAV of a plausible duration for --skip-audio mode."""
+    """Generate silent WAVs matching the row's requested duration."""
     import wave
-    duration = 60.0  # seconds — enough for a render test
+    try:
+        duration = float(str_val(row, "target_duration_sec"))
+    except ValueError:
+        duration = 0.0
+    if duration <= 0:
+        duration = max(10.0, len(str_val(row, "audio_script").split()) / 2.5)
     sample_rate = 44100
     path = TEMP_AUDIO / f"{vid_id}_voice.wav"
     pad_path = TEMP_AUDIO / f"{vid_id}_pad.wav"

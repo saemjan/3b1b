@@ -91,6 +91,7 @@ KNOWN_PRIMITIVES = {
     "two_beam_splitter", "potential_well", "induction_coil",
     "compass_grid", "pipe_with_gauge", "pv_diagram_tracker",
     "wave_packet_tunneling", "bohr_orbit_photon", "accretion_disk",
+    "random_walk", "momentum_exchange",
 }
 
 SUPPORTED_BEAT_TYPES = {

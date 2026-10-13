@@ -269,6 +269,31 @@ This example explains why instantaneous speed is a limit of average speed.
 Its secant-to-tangent visual is an animation, not a static graph, and keeps
 the idea focused rather than presenting a dense slide deck.
 
+### Original 20-video Feynman-inspired batch
+
+Generate or refresh the standalone 20-row batch without replacing the
+production `content_batch.csv`:
+
+```bash
+python3 tools/generate_feynman_series.py
+python3 schema_validator.py examples/feynman_20_video_batch.csv
+python3 batch_runner.py --csv examples/feynman_20_video_batch.csv --dry-run
+```
+
+The batch contains 10 original 60-second horizontal shorts and 10
+corresponding 180-second vertical lectures across atoms, energy, clocks,
+random walks, calculus, gravity, Newtonian motion, momentum, waves, and
+interference. Each topic has a concept-specific Manim animation, equations,
+timed story beats, and narration. Story beats use the renderer's locally
+generated transition and emphasis cues. The scripts are newly written
+explanations inspired by physics topics associated with Feynman's lectures;
+they are not transcriptions or quotations. Review physics assumptions and
+audio before publishing.
+
+To render this batch in GitHub Actions, use **Run workflow** and select
+`examples/feynman_20_video_batch.csv` as the CSV batch. Locally, `--csv`
+selects the same input without copying over the production batch.
+
 ---
 
 🔁 Daily Workflow

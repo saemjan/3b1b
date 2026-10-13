@@ -3,6 +3,7 @@ import importlib.util
 import os
 import tempfile
 import unittest
+import json
 
 
 TEST_FILE = os.path.join(os.path.dirname(__file__), '..', 'tools', 'generate_topic_bundle.py')
@@ -88,6 +89,51 @@ class TopicBundleGeneratorTests(unittest.TestCase):
                 self.assertIn('2 kg object falls 5 m', prompt['text'])
                 self.assertEqual(row['option_a'], '')
                 self.assertIn('98.1 J', row['correct_answer'])
+
+    def test_feynman_series_contains_ten_paired_original_topics(self):
+        series_path = os.path.join(
+            os.path.dirname(__file__), '..', 'tools',
+            'generate_feynman_series.py',
+        )
+        series_spec = importlib.util.spec_from_file_location(
+            'generate_feynman_series', series_path,
+        )
+        series = importlib.util.module_from_spec(series_spec)
+        series_spec.loader.exec_module(series)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output = os.path.join(tmpdir, 'series.csv')
+            rows = series.write_batch(output)
+
+            with open(output, newline='', encoding='utf-8') as fh:
+                parsed = list(csv.DictReader(fh))
+
+        self.assertEqual(len(rows), 20)
+        self.assertEqual(len(parsed), 20)
+        self.assertEqual(
+            {orientation: sum(row['orientation'] == orientation
+                              for row in parsed)
+             for orientation in ('horizontal', 'vertical')},
+            {'horizontal': 10, 'vertical': 10},
+        )
+        self.assertEqual(
+            {duration: sum(row['target_duration_sec'] == duration
+                           for row in parsed)
+             for duration in ('60', '180')},
+            {'60': 10, '180': 10},
+        )
+        for row in parsed:
+            words = len(row['audio_script'].split())
+            if row['orientation'] == 'horizontal':
+                self.assertGreaterEqual(words, 112)
+                self.assertLessEqual(words, 180)
+            else:
+                self.assertGreaterEqual(words, 337)
+                self.assertLessEqual(words, 540)
+            visuals = json.loads(row['visual_data_json'])
+            beats = json.loads(row['beats_json'])
+            visual_ids = {visual['id'] for visual in visuals}
+            self.assertTrue(all(beat['focus'] in visual_ids for beat in beats))
 
 
 if __name__ == '__main__':

@@ -9,11 +9,13 @@ on:
       - "generate_audio.py"
       - "sound_design.py"
       - "tools/generate_topic_bundle.py"
+      - "tools/generate_feynman_series.py"
       - "render_universal.py"
       - "batch_runner.py"
       - "schema_validator.py"
       - "requirements.txt"
       - ".github/workflows/render_shorts.yml"
+      - "examples/feynman_20_video_batch.csv"
   workflow_dispatch:
     inputs:
       only:
@@ -40,6 +42,14 @@ on:
         description: "draft | 720p | 1080p | 4k"
         required: false
         default: "1080p"
+      csv_path:
+        description: "CSV batch to render"
+        type: choice
+        options:
+          - content_batch.csv
+          - examples/feynman_20_video_batch.csv
+        required: true
+        default: content_batch.csv
 
 env:
   PYTHONUNBUFFERED: "1"
@@ -47,6 +57,9 @@ env:
   COQUI_TOS_AGREED: "1"
   SAEM_ORIENTATION: ${{ inputs.orientation || 'horizontal' }}
   HF_HOME: ${{ github.workspace }}/.hf_cache
+  BATCH_CSV: ${{ inputs.csv_path || 'content_batch.csv' }}
+  VIDEO_IDS: ${{ inputs.only || '' }}
+  RENDER_QUALITY: ${{ inputs.quality || '' }}
 
 jobs:
   # ========================================================== validate
@@ -79,21 +92,25 @@ jobs:
               --concept "$TOPIC_CONCEPT" \
               --problem "$TOPIC_PROBLEM" \
               --kind "$VIDEO_FORMAT" \
-              --output content_batch.csv
-          elif [ -f generate_csv.py ]; then
+              --output "$BATCH_CSV"
+          elif [ "$BATCH_CSV" = "content_batch.csv" ] && [ -f generate_csv.py ]; then
             python3 generate_csv.py
           fi
 
       - name: Inspect CSV header and rows
         run: |
+          if [ ! -f "$BATCH_CSV" ]; then
+            echo "::error::Batch CSV not found: $BATCH_CSV"
+            exit 1
+          fi
           echo "::group::CSV header"
-          head -1 content_batch.csv
+          head -1 "$BATCH_CSV"
           echo "::endgroup::"
 
           echo "::group::Row summary"
           python3 - <<'PY'
-          import csv
-          with open("content_batch.csv", newline="", encoding="utf-8") as f:
+          import csv, os
+          with open(os.environ["BATCH_CSV"], newline="", encoding="utf-8") as f:
               r = csv.reader(f)
               header = next(r)
               rows = list(r)
@@ -110,8 +127,8 @@ jobs:
         id: count
         run: |
           python3 - <<'PY' >> "$GITHUB_OUTPUT"
-          import csv
-          with open("content_batch.csv", newline="", encoding="utf-8") as f:
+          import csv, os
+          with open(os.environ["BATCH_CSV"], newline="", encoding="utf-8") as f:
               rows = list(csv.DictReader(f))
           ids = ",".join(r["video_id"] for r in rows)
           print(f"rows={len(rows)}")
@@ -124,7 +141,7 @@ jobs:
           python3 - <<'PY'
           import csv, os, sys
           rows = list(csv.DictReader(
-              open("content_batch.csv", newline="", encoding="utf-8")))
+              open(os.environ["BATCH_CSV"], newline="", encoding="utf-8")))
           if not rows:
               sys.exit("::error::CSV has no data rows")
           csv_orients = {r.get("orientation", "").strip().lower() for r in rows}
@@ -148,8 +165,8 @@ jobs:
       - name: Run schema validator
         run: |
           echo "::group::schema_validator.py output"
-          if ! python3 schema_validator.py content_batch.csv; then
-            echo "::error file=content_batch.csv,title=Schema validation failed::See group above for details"
+          if ! python3 schema_validator.py "$BATCH_CSV"; then
+            echo "::error file=$BATCH_CSV,title=Schema validation failed::See group above for details"
             echo "::endgroup::"
             exit 1
           fi
@@ -223,15 +240,28 @@ jobs:
         id: render
         run: |
           echo "::group::batch_runner.py shard ${{ matrix.shard }}"
-          python3 batch_runner.py \
-            --format "${{ inputs.format || 'both' }}" \
-            --chunk ${{ matrix.shard }} \
-            --total-chunks 4 \
-            --retries 2 \
+          args=(
+            python3 batch_runner.py
+            --csv "$BATCH_CSV"
+            --format "${{ inputs.format || 'both' }}"
+            --chunk ${{ matrix.shard }}
+            --total-chunks 4
+            --retries 2
             --log-file "output_shorts/runlog_shard_${{ matrix.shard }}.json"
-          rc=$?
+          )
+          if [ -n "$VIDEO_IDS" ]; then
+            args+=(--only "$VIDEO_IDS")
+          fi
+          if [ -n "$RENDER_QUALITY" ]; then
+            args+=(--quality "$RENDER_QUALITY")
+          fi
+          if "${args[@]}"; then
+            rc=0
+          else
+            rc=$?
+          fi
           echo "::endgroup::"
-          exit $rc
+          exit "$rc"
 
       - name: Count rendered videos
         id: tally

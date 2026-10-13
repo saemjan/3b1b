@@ -1290,6 +1290,10 @@ class UniversalPhysicsScene(VoiceoverMovingCameraScene):
                 return self._prim_arc(item)
             if itype == "secant_tangent":
                 return self._prim_secant_tangent(item)
+            if itype == "random_walk":
+                return self._prim_random_walk(item)
+            if itype == "momentum_exchange":
+                return self._prim_momentum_exchange(item)
             if itype in ("graph", "function", "curve"):
                 return self._prim_graph(item)
             if itype in ("shape", "lens", "circle", "rectangle",
@@ -1632,6 +1636,151 @@ class UniversalPhysicsScene(VoiceoverMovingCameraScene):
         return VGroup(
             axes, curve, secant, tangent, current_point, earlier_point,
             interval_label, tangent_label, time_label,
+        )
+
+    def _prim_random_walk(self, item):
+        steps = max(8, int(item.get("steps", 72)))
+        step_length = float(item.get("step_length", 0.24))
+        period = max(4.0, float(item.get("period", 9.0)))
+        color = resolve_color(item)
+        origin = to_3d(item.get("origin", [0.0, 0.0, 0.0]))
+        rng = np.random.default_rng(int(item.get("seed", 17)))
+        angles = rng.uniform(0.0, TAU, steps)
+        points = [origin.copy()]
+        for angle in angles:
+            points.append(points[-1] + step_length *
+                          np.array([np.cos(angle), np.sin(angle), 0.0]))
+        points = np.asarray(points)
+        gt = self.global_time
+
+        def step_index():
+            phase = (gt.get_value() % period) / period
+            return min(steps, int(phase * steps))
+
+        def trail():
+            idx = step_index()
+            if idx < 1:
+                return VMobject()
+            return VMobject().set_points_as_corners(points[:idx + 1]) \
+                .set_stroke(color, width=3.0, opacity=0.9)
+
+        def rms_guide():
+            radius = max(0.06, step_length * np.sqrt(step_index()))
+            return Circle(
+                radius=radius,
+                color=COLOR["accent"],
+                stroke_width=1.5,
+                stroke_opacity=0.45,
+            ).move_to(origin)
+
+        walker = always_redraw(
+            lambda: Dot(points[step_index()], radius=0.095,
+                        color=COLOR["white"])
+        )
+        counter = always_redraw(
+            lambda: Text(
+                f"N = {step_index()}    typical distance ∝ √N",
+                font_size=18,
+                color=COLOR["accent"],
+            ).move_to(origin + DOWN * 2.0)
+        )
+        axes = VGroup(
+            Line(origin + LEFT * 3.1, origin + RIGHT * 3.1,
+                 color=COLOR["muted"], stroke_width=1.2),
+            Line(origin + DOWN * 2.2, origin + UP * 2.2,
+                 color=COLOR["muted"], stroke_width=1.2),
+            Dot(origin, radius=0.055, color=COLOR["accent"]),
+        )
+        return VGroup(axes, always_redraw(rms_guide), always_redraw(trail),
+                      walker, counter)
+
+    def _prim_momentum_exchange(self, item):
+        mass_1 = float(item.get("mass_1", 1.0))
+        mass_2 = float(item.get("mass_2", 1.0))
+        velocity_1 = float(item.get("velocity_1", 0.8))
+        velocity_2 = float(item.get("velocity_2", -0.8))
+        x_1 = float(item.get("x_1", -2.4))
+        x_2 = float(item.get("x_2", 2.4))
+        requested_period = float(item.get("period", 6.5))
+        if (mass_1 <= 0 or mass_2 <= 0 or velocity_1 <= velocity_2
+                or x_1 >= x_2):
+            raise ValueError(
+                "momentum_exchange requires positive masses and "
+                "x_1 < x_2 and velocity_1 > velocity_2 so the bodies collide."
+            )
+
+        collision_time = (x_2 - x_1) / (velocity_1 - velocity_2)
+        period = max(collision_time + 2.5, requested_period, 5.0)
+        collision_x = x_1 + velocity_1 * collision_time
+        v1_after = (
+            (mass_1 - mass_2) * velocity_1 + 2 * mass_2 * velocity_2
+        ) / (mass_1 + mass_2)
+        v2_after = (
+            2 * mass_1 * velocity_1 + (mass_2 - mass_1) * velocity_2
+        ) / (mass_1 + mass_2)
+        gt = self.global_time
+
+        def positions():
+            t = gt.get_value() % period
+            if t < collision_time:
+                return (x_1 + velocity_1 * t, x_2 + velocity_2 * t)
+            after = t - collision_time
+            return (collision_x + v1_after * after,
+                    collision_x + v2_after * after)
+
+        def body(index, mass, color):
+            def make_body():
+                x = positions()[index]
+                radius = 0.18 + 0.10 * np.sqrt(mass)
+                return Circle(
+                    radius=radius,
+                    color=color,
+                    fill_color=color,
+                    fill_opacity=0.9,
+                    stroke_width=1.5,
+                ).move_to([x, -0.35, 0])
+
+            def make_label():
+                return Text(
+                    f"m{index + 1} = {mass:g}",
+                    font_size=16,
+                    color=color,
+                ).next_to(make_body(), UP, buff=0.12)
+
+            def make_velocity():
+                x = positions()[index]
+                velocity = (velocity_1 if index == 0 else velocity_2)
+                if gt.get_value() % period >= collision_time:
+                    velocity = v1_after if index == 0 else v2_after
+                direction = RIGHT if velocity >= 0 else LEFT
+                return Arrow(
+                    [x, -0.35, 0],
+                    [x, -0.35, 0] + direction * (0.45 + 0.25 * abs(velocity)),
+                    buff=0.0,
+                    color=COLOR["white"],
+                    stroke_width=2.2,
+                    max_tip_length_to_length_ratio=0.25,
+                )
+
+            return VGroup(
+                always_redraw(make_body),
+                always_redraw(make_label),
+                always_redraw(make_velocity),
+            )
+
+        track = Line([-3.4, -0.35, 0], [3.4, -0.35, 0],
+                     color=COLOR["muted"], stroke_width=1.5)
+        collision_marker = DashedLine(
+            [0.0, -0.05, 0], [0.0, 0.65, 0],
+            color=COLOR["accent"], stroke_width=1.5,
+        )
+        collision_caption = Text(
+            "momentum conserved", font_size=18, color=COLOR["accent"]
+        ).move_to([0.0, 0.95, 0])
+        return VGroup(
+            track, collision_marker, collision_caption,
+            body(0, mass_1, COLOR["field"]),
+            body(1, mass_2, COLOR["force"]),
         )
 
     def _prim_shape(self, item):

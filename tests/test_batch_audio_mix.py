@@ -12,6 +12,31 @@ spec.loader.exec_module(batch_runner)
 
 
 class BatchAudioMixTests(unittest.TestCase):
+    def test_batch_runner_accepts_alternate_csv_path(self):
+        with patch('sys.argv', [
+            'batch_runner.py', '--csv', 'examples/feynman_20_video_batch.csv',
+            '--quality', 'draft',
+        ]):
+            args = batch_runner.parse_args()
+
+        self.assertEqual(
+            args.csv,
+            Path('examples/feynman_20_video_batch.csv'),
+        )
+        self.assertEqual(args.quality, 'draft')
+
+    def test_silent_audio_uses_target_video_duration(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmpdir, patch.object(
+            batch_runner, 'TEMP_AUDIO', Path(tmpdir),
+        ):
+            _, _, duration = batch_runner._make_silent_audio(
+                {'target_duration_sec': '3'}, 'duration_test',
+            )
+
+        self.assertEqual(duration, 3.0)
+
     def test_raw_render_cues_are_mixed_with_voice_and_pad(self):
         with patch.object(
             batch_runner.subprocess,
