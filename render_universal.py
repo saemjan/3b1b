@@ -47,6 +47,16 @@ except ImportError:
     VoiceoverScene = Scene
     GTTSService = None
 
+if HAS_VOICEOVER:
+    class VoiceoverMovingCameraScene(VoiceoverScene, MovingCameraScene):
+        pass
+
+    class VoiceoverThreeDScene(VoiceoverScene, ThreeDScene):
+        pass
+else:
+    VoiceoverMovingCameraScene = MovingCameraScene
+    VoiceoverThreeDScene = ThreeDScene
+
 try:
     import networkx as nx
     HAS_NX = True
@@ -214,7 +224,7 @@ def typo(kind: str, text: str, color=WHITE):
 SELF_ANIMATED = {
     "equation_morph", "numerical_chain", "warning_box",
     "quiz_frame", "concept_map", "driven_oscillator",
-    "wave_pulse", "harmonic_decomposition",
+    "wave_pulse", "harmonic_decomposition", "falling_energy",
 }
 
 
@@ -265,7 +275,7 @@ def morph_tex(scene, old, new, run_time=1.3):
 
 
 def focus_on(scene, mob, width_frac=0.55, run_time=1.2, ease="land"):
-    """Zoom the camera onto a mobject."""
+    """Zoom the camera onto a mobject with a crisp, deliberate settle."""
     fw = config.frame_width
     scene.play(
         scene.camera.frame.animate
@@ -274,6 +284,14 @@ def focus_on(scene, mob, width_frac=0.55, run_time=1.2, ease="land"):
         run_time=run_time,
         rate_func=ease_for(ease),
     )
+    if mob is not None:
+        try:
+            scene.play(
+                mob.animate(rate_func=there_and_back, run_time=0.45).scale(1.02),
+                run_time=0.45,
+            )
+        except Exception:
+            pass
 
 
 def pulse(scene, mob, scale=1.08, run_time=0.45):
@@ -650,7 +668,7 @@ class SaemLabsBranding:
 
 
 # ============================================================ 2D scene
-class UniversalPhysicsScene(VoiceoverScene, MovingCameraScene):
+class UniversalPhysicsScene(VoiceoverMovingCameraScene):
     def __init__(self, scene_kwargs=None, **kwargs):
         super().__init__(**kwargs)
         self.sk = scene_kwargs or {}
@@ -703,6 +721,11 @@ class UniversalPhysicsScene(VoiceoverScene, MovingCameraScene):
         )
         main_target = max(4.0, duration - closing_dur)
 
+        if visual_group and len(visual_group) > 0:
+            self.director.zoom_to(config.frame_width * 0.95,
+                                  run_time=0.7, ease="launch")
+            self.director.reset(run_time=0.8, ease="soft")
+
         if use_beats:
             self._run_narrated_timeline(
                 beats, eq_card, main_target, use_voiceover,
@@ -752,6 +775,33 @@ class UniversalPhysicsScene(VoiceoverScene, MovingCameraScene):
 
     # -------------------------------------------------- title (legacy)
     def _build_title(self, title, tagline):
+        if not title and not tagline:
+            return
+
+        if HAS_VISUAL_KIT:
+            if title:
+                visual_kit.kinetic_title(
+                    self,
+                    title,
+                    pos=[0, zone("hook") + 0.65, 0],
+                    size=46,
+                    color=COLOR["white"],
+                    stagger=0.035,
+                    run_time=1.1,
+                    hold=0.25,
+                    fade_out=False,
+                )
+            if tagline:
+                tag = Text(tagline, font_size=24, color=COLOR["muted"],
+                           slant=ITALIC)
+                tag.move_to([0, zone("hook") - 0.75, 0])
+                self.play(FadeIn(tag, shift=UP * 0.25,
+                                 rate_func=rf.ease_out_cubic), run_time=0.65)
+                self.wait(0.25)
+                self.play(FadeOut(tag, shift=UP * 0.2,
+                                  rate_func=rf.ease_in_cubic), run_time=0.35)
+            return
+
         parts = []
         if title:
             try:
@@ -790,6 +840,8 @@ class UniversalPhysicsScene(VoiceoverScene, MovingCameraScene):
                 fit_to_frame(mob)
             if itype in SELF_ANIMATED:
                 self._self_animated.append(mob)
+                if itype == "falling_energy":
+                    group.add(mob)
             else:
                 group.add(mob)
             key = str(item.get("id") or f"elem_{idx}")
@@ -972,7 +1024,7 @@ class UniversalPhysicsScene(VoiceoverScene, MovingCameraScene):
             self._beat_promise(focus, duration, ease_name,
                                 visual_group=visual_group)
         elif kind == "law":
-            self._beat_law(eq_card, duration)
+            self._beat_law(eq_card, duration, focus)
         elif kind == "emphasis":
             self._beat_emphasis(focus, duration, ease_name)
         elif kind == "analogy":
@@ -982,7 +1034,7 @@ class UniversalPhysicsScene(VoiceoverScene, MovingCameraScene):
         elif kind == "experiment":
             self._beat_experiment(focus, duration, ease_name)
         elif kind == "punchline":
-            self._beat_punchline(eq_card, duration)
+            self._beat_punchline(eq_card, duration, focus)
         elif kind == "cta":
             self._beat_cta(duration)
         else:
@@ -997,6 +1049,17 @@ class UniversalPhysicsScene(VoiceoverScene, MovingCameraScene):
                            lag_ratio=0.10, run_time=1.4)
         mob = self.visuals_by_id.get(focus)
         if mob is not None:
+            if HAS_VISUAL_KIT and mob.width < config.frame_width * 0.45:
+                visual_kit.story_callout(
+                    self,
+                    mob,
+                    "IDEA",
+                    subtitle="One idea at a time",
+                    detail="Build from the simplest object first.",
+                    direction=UP,
+                    distance=0.9,
+                    hold=0.2,
+                )
             self.play(Indicate(mob, color=COLOR["accent"],
                                scale_factor=1.10),
                       run_time=min(duration, 1.5),
@@ -1019,7 +1082,16 @@ class UniversalPhysicsScene(VoiceoverScene, MovingCameraScene):
             pulse(self, mob, scale=1.05, run_time=0.5)
         live_wait(self, max(0, duration - 2.4))
 
-    def _beat_law(self, eq_card, duration):
+    def _beat_law(self, eq_card, duration, focus=""):
+        if focus == "energy_model":
+            mob = self.visuals_by_id.get(focus)
+            if mob is not None:
+                _play_sound(self, "tick", gain_db=-18)
+                self.play(Indicate(mob, color=COLOR["accent"],
+                                   scale_factor=1.04),
+                          run_time=min(duration, 1.2))
+                live_wait(self, max(0, duration - 1.2))
+                return
         if len(eq_card) == 0:
             live_wait(self, duration)
             return
@@ -1061,8 +1133,25 @@ class UniversalPhysicsScene(VoiceoverScene, MovingCameraScene):
     def _beat_midpoint(self, focus, duration, ease_name="soft"):
         mob = self.visuals_by_id.get(focus)
         if mob is not None:
+            if focus == "energy_model":
+                self.play(Indicate(mob, color=COLOR["accent"],
+                                   scale_factor=1.04),
+                          run_time=min(duration, 1.0))
+                live_wait(self, max(0, duration - 1.0))
+                return
             focus_on(self, mob, width_frac=0.65, run_time=0.9,
                      ease="land")
+            if HAS_VISUAL_KIT and mob.width < config.frame_width * 0.45:
+                visual_kit.story_callout(
+                    self,
+                    mob,
+                    "POINT",
+                    subtitle="Why it matters",
+                    detail="The pattern is now visible.",
+                    direction=UP,
+                    distance=1.0,
+                    hold=0.25,
+                )
             pulse(self, mob, scale=1.10, run_time=0.5)
             self.director.reset(run_time=0.7, ease="soft")
             live_wait(self, max(0, duration - 2.1))
@@ -1081,9 +1170,28 @@ class UniversalPhysicsScene(VoiceoverScene, MovingCameraScene):
         else:
             live_wait(self, duration)
 
-    def _beat_punchline(self, eq_card, duration):
+    def _beat_punchline(self, eq_card, duration, focus=""):
         _play_sound(self, "chime", gain_db=-16)
+        if focus == "energy_model":
+            mob = self.visuals_by_id.get(focus)
+            if mob is not None:
+                self.play(Indicate(mob, color=COLOR["accent"],
+                                   scale_factor=1.06),
+                          run_time=min(duration, 1.2))
+                live_wait(self, max(0, duration - 1.2))
+                return
         if len(eq_card) > 0:
+            if HAS_VISUAL_KIT:
+                visual_kit.story_callout(
+                    self,
+                    eq_card,
+                    "TRUTH",
+                    subtitle="The clean idea",
+                    detail="Nothing else is needed.",
+                    direction=UP,
+                    distance=0.9,
+                    hold=0.25,
+                )
             self.play(Circumscribe(eq_card, color=COLOR["accent"],
                                    buff=0.25, run_time=1.2))
             live_wait(self, max(0, duration - 1.2))
@@ -1206,6 +1314,8 @@ class UniversalPhysicsScene(VoiceoverScene, MovingCameraScene):
                 return self._prim_heat_flow(item)
             if itype == "energy_bar":
                 return self._prim_energy_bar(item)
+            if itype == "falling_energy":
+                return self._prim_falling_energy(item)
             if itype == "wave":
                 return self._prim_wave(item)
             if itype == "number_line":
@@ -1656,6 +1766,68 @@ class UniversalPhysicsScene(VoiceoverScene, MovingCameraScene):
             group.add(safe_latex(label, 24, WHITE)
                       .next_to(bg, LEFT, buff=0.25))
         return group
+
+    def _prim_falling_energy(self, item):
+        horizontal = str(item.get("orientation", "vertical")).lower() == "horizontal"
+        object_x = -3.45 if horizontal else -2.45
+        bar_left = 0.0 if horizontal else -0.15
+        bar_width = 3.5 if horizontal else 3.0
+        start_y, end_y = 1.65, -1.45
+        bar_y = (0.95, -0.25)
+        period = max(4.0, float(item.get("period", 7.0)))
+        gt = self.global_time
+
+        def fraction():
+            phase = (gt.get_value() % period) / period
+            return 0.5 - 0.5 * np.cos(2.0 * np.pi * phase)
+
+        track = DashedLine(
+            [object_x, start_y, 0], [object_x, end_y, 0],
+            color=COLOR["muted"], stroke_width=1.5, dash_length=0.08,
+        )
+        floor = Line(
+            [object_x - 0.45, end_y - 0.28, 0],
+            [object_x + 0.45, end_y - 0.28, 0],
+            color=COLOR["white"], stroke_width=2.0,
+        )
+        body = always_redraw(
+            lambda: Circle(radius=0.22, color=COLOR["accent"],
+                           fill_color=COLOR["accent"], fill_opacity=0.95)
+            .move_to([object_x, start_y - (start_y - end_y) * fraction(), 0])
+        )
+        labels = VGroup(
+            Text("POTENTIAL", font_size=17, color=COLOR["field"])
+            .move_to([bar_left - 0.68, bar_y[0], 0]),
+            Text("KINETIC", font_size=17, color=COLOR["force"])
+            .move_to([bar_left - 0.68, bar_y[1], 0]),
+            Text("TOTAL ENERGY: CONSTANT", font_size=18,
+                 color=COLOR["accent"])
+            .move_to([bar_left + bar_width / 2, 1.85, 0]),
+            Text(
+                (f"|DELTA U| = {float(item['energy_change']):.1f} J"
+                 if item.get("energy_change") is not None
+                 else "DELTA U = m g h"),
+                font_size=18, color=COLOR["white"],
+            ).move_to([bar_left + bar_width / 2, -1.15, 0]),
+        )
+        bars = VGroup()
+        for index, color in enumerate((COLOR["field"], COLOR["force"])):
+            y = bar_y[index]
+            background = Rectangle(
+                width=bar_width, height=0.42, stroke_color=COLOR["border"],
+                stroke_width=1.5, fill_color=COLOR["card"], fill_opacity=0.5,
+            ).move_to([bar_left + bar_width / 2, y, 0])
+
+            def filled_bar(index=index, y=y, color=color):
+                value = 1.0 - fraction() if index == 0 else fraction()
+                width = max(0.02, bar_width * value)
+                return Rectangle(
+                    width=width, height=0.34, stroke_width=0,
+                    fill_color=color, fill_opacity=0.88,
+                ).move_to([bar_left + width / 2, y, 0])
+
+            bars.add(background, always_redraw(filled_bar))
+        return VGroup(track, floor, body, labels, bars)
 
     def _prim_wave(self, item):
         xr = item.get("x_range", [-6.0, 6.0])
@@ -3402,7 +3574,7 @@ class UniversalPhysicsScene(VoiceoverScene, MovingCameraScene):
 
 
 # ============================================================ 3D scenes
-class Universal3DPhysicsScene(VoiceoverScene, ThreeDScene):
+class Universal3DPhysicsScene(VoiceoverThreeDScene):
     def __init__(self, scene_kwargs=None, **kwargs):
         super().__init__(**kwargs)
         self.sk = scene_kwargs or {}
@@ -3468,7 +3640,7 @@ class Universal3DPhysicsScene(VoiceoverScene, ThreeDScene):
             SaemLabsBranding.closing_card(self, duration=outro_dur)
 
 
-class SaemLabs3DScene(VoiceoverScene, ThreeDScene):
+class SaemLabs3DScene(VoiceoverThreeDScene):
     def __init__(self, scene_kwargs=None, **kwargs):
         super().__init__(**kwargs)
         self.sk = scene_kwargs or {}

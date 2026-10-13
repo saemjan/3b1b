@@ -16,8 +16,8 @@ from __future__ import annotations
 import numpy as np
 from manim import (
     VGroup, Arrow, Line, DashedLine, Text, MathTex, Dot, Circle,
-    Rectangle, FadeIn, FadeOut, GrowArrow, Create, Write,
-    UP, DOWN, LEFT, RIGHT, ORIGIN, TAU,
+    Rectangle, RoundedRectangle, FadeIn, FadeOut, GrowArrow, Create,
+    Write, UP, DOWN, LEFT, RIGHT, ORIGIN, TAU,
     there_and_back, rate_functions as rf, config, VMobject, ValueTracker,
 )
 try:
@@ -89,6 +89,71 @@ def annotate(scene, target, text, direction=UP, distance=1.2,
         scene.play(FadeOut(group, shift=direction * 0.15),
                    run_time=0.4, rate_func=rf.ease_in_cubic)
         return None
+    return group
+
+
+def story_callout(scene, target, header, subtitle=None, detail=None,
+                  direction=UP, distance=0.8, color=None,
+                  accent=None, run_time=0.8, hold=0.6,
+                  fade_out=True):
+    """Show a minimal, 3Blue1Brown/Feynman-style cue on a focal object."""
+    if target is None:
+        return None
+    color = color or COLOR["white"]
+    accent = accent or COLOR["accent"]
+
+    try:
+        edge = _mob_edge(target, direction)
+        tip = edge + direction * 0.1
+        tail = tip + direction * (distance + 0.4)
+    except Exception:
+        tail = np.array([0.0, 0.0, 0.0])
+        tip = np.array([0.0, 0.0, 0.0])
+
+    label = _label(str(header), size=20, color=accent)
+    label.set_z_index(10)
+    body = VGroup(label)
+    if subtitle:
+        sub = _label(str(subtitle), size=15, color=color)
+        body = VGroup(label, sub)
+        body.arrange(DOWN, buff=0.12, aligned_edge=LEFT)
+    if detail:
+        det = _label(str(detail), size=12, color=COLOR["muted"])
+        try:
+            body.add(det)
+            body.arrange(DOWN, buff=0.08, aligned_edge=LEFT)
+        except Exception:
+            pass
+
+    badge = RoundedRectangle(
+        width=max(body.width + 0.5, 2.2),
+        height=max(body.height + 0.35, 0.9),
+        corner_radius=0.16,
+        fill_color="#15161D",
+        fill_opacity=0.92,
+        stroke_color=accent,
+        stroke_width=1.4,
+    )
+    badge.set_z_index(9)
+    callout = VGroup(badge, body)
+    callout.arrange(DOWN, buff=0.12, aligned_edge=LEFT)
+    try:
+        callout.next_to(target, direction, buff=distance)
+    except Exception:
+        callout.move_to(tail)
+
+    arrow = Arrow(tail, tip, buff=0.05, color=accent, stroke_width=2.5,
+                  max_tip_length_to_length_ratio=0.35)
+    group = VGroup(arrow, callout)
+
+    scene.play(FadeIn(callout, shift=direction * 0.15),
+               GrowArrow(arrow),
+               run_time=run_time, rate_func=rf.ease_out_cubic)
+    if hold:
+        scene.wait(hold)
+    if fade_out:
+        scene.play(FadeOut(group, shift=direction * 0.15),
+                   run_time=0.35, rate_func=rf.ease_in_cubic)
     return group
 
 

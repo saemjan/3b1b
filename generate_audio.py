@@ -19,7 +19,7 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 import torch
-from scipy.signal import butter, lfilter, resample_poly
+from scipy.signal import resample_poly
 from TTS.api import TTS
 
 try:
@@ -108,20 +108,31 @@ def create_ambient_pad(
             f"Call _resample_to_canonical first."
         )
     n = len(data) if data.ndim == 1 else data.shape[0]
+    time_axis = np.arange(n, dtype=np.float64) / sr
 
-    nyq = 0.5 * sr
-    cutoff = min(400.0, nyq - 1.0)
-    b, a = butter(2, cutoff / nyq, btype="low", analog=False)
+    # A restrained minor-seventh harmonic bed gives the explainer a tonal floor.
+    frequencies = (110.0, 164.81, 196.0, 220.0)
+    weights = (1.0, 0.34, 0.22, 0.12)
+    bed = sum(
+        weight * np.sin(2.0 * np.pi * frequency * time_axis)
+        for frequency, weight in zip(frequencies, weights)
+    )
+    motion = 0.82 + 0.18 * np.sin(2.0 * np.pi * 0.075 * time_axis)
+    bed *= motion
 
-    rng = np.random.default_rng(42)
-    noise = lfilter(b, a, rng.normal(0, 1.0, n))
-
-    rms = np.sqrt(np.mean(noise ** 2) + 1e-12)
+    rms = np.sqrt(np.mean(bed ** 2) + 1e-12)
     target_rms = 10 ** (target_gain_db / 20.0)
-    noise = (noise / rms) * target_rms
-    noise = np.clip(noise, -1.0, 1.0)
+    bed = (bed / rms) * target_rms
 
-    sf.write(str(output_pad_path), noise.astype(np.float32),
+    fade_in = min(int(sr * 1.2), n // 2)
+    fade_out = min(int(sr * 1.8), n // 2)
+    envelope = np.ones(n, dtype=np.float64)
+    if fade_in:
+        envelope[:fade_in] *= np.linspace(0.0, 1.0, fade_in)
+    if fade_out:
+        envelope[-fade_out:] *= np.linspace(1.0, 0.0, fade_out)
+    bed *= envelope
+    sf.write(str(output_pad_path), np.clip(bed, -1.0, 1.0).astype(np.float32),
              int(sr), subtype="PCM_16")
 
 

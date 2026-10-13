@@ -51,7 +51,7 @@ REQUIRED_COLS = [
 OPTIONAL_COLS = [
     "beats_json", "bindings_json", "formula_sheet_json",
     "manifest_path", "language", "quality", "orientation",
-    "audio_script_hi",
+    "audio_script_hi", "target_duration_sec",
 ]
 
 KNOWN_PRIMITIVES = {
@@ -80,6 +80,7 @@ KNOWN_PRIMITIVES = {
     "damped_oscillator", "radiating_wave", "two_source_waves",
     "driven_electron", "color_triangle", "thermionic_emission",
     "beat_pattern", "mirror_scene", "medium_atoms",
+    "falling_energy",
     # Day 5 advanced
     "field_by_opacity", "polar_pattern", "phase_portrait",
     "light_wave_slice", "sliced_wave", "spectral_sum", "stream_field",
@@ -198,6 +199,7 @@ def validate_csv(path: str) -> bool:
         idx_formula   = col_index("formula_sheet_json")
         idx_manifest  = col_index("manifest_path")
         idx_orient    = col_index("orientation")
+        idx_duration  = col_index("target_duration_sec")
 
         required_col_count = len(header)
 
@@ -237,9 +239,20 @@ def validate_csv(path: str) -> bool:
             # --- audio word count
             script = row[12].strip()
             words = script.split()
-            if words and not (WORD_MIN <= len(words) <= WORD_MAX):
+            word_min, word_max = WORD_MIN, WORD_MAX
+            if 0 <= idx_duration < len(row) and row[idx_duration].strip():
+                try:
+                    target_duration = float(row[idx_duration])
+                    if target_duration > 0:
+                        expected_words = target_duration * 2.5
+                        word_min = int(expected_words * 0.75)
+                        word_max = int(expected_words * 1.20)
+                except ValueError:
+                    print(f"[WARN] Row {row_idx} ({vid}): invalid "
+                          "target_duration_sec; using default word limits.")
+            if words and not (word_min <= len(words) <= word_max):
                 print(f"[WARN] Row {row_idx} ({vid}): {len(words)} words "
-                      f"(want {WORD_MIN}-{WORD_MAX}).")
+                      f"(want {word_min}-{word_max}).")
 
             if 0 <= idx_script_hi < len(row) and row[idx_script_hi].strip():
                 hi_words = row[idx_script_hi].split()

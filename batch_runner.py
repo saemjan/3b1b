@@ -10,6 +10,9 @@ Reads content_batch.csv, for each row:
 Flags:
   --dry-run        Validate + list rows, no render
   --only a,b,c     Only render these video_ids
+    --format short|lecture|both
+                                     Filter rows by the desired cut style
+    --duration N     Override render duration seconds per row
   --resume         Skip rows whose final MP4 exists and is >1MB
   --chunk N        Shard index for parallel CI workers
   --total-chunks M Split into M parallel workers
@@ -34,6 +37,20 @@ import time
 import traceback
 from datetime import datetime
 from pathlib import Path
+
+
+def ensure_supported_python() -> None:
+    """Fail early with a clear message on unsupported interpreters."""
+    version = sys.version_info
+    if not (3, 9) <= (version.major, version.minor) < (3, 13):
+        raise SystemExit(
+            "Unsupported Python version. This project requires Python 3.9–3.12 "
+            "(recommended: 3.12) to match the pinned Manim/TTS stack. "
+            "Use a compatible venv, e.g. `python3.12 -m venv .venv`."
+        )
+
+
+ensure_supported_python()
 
 
 # ────────────────────────────────────────────────────────────────────────
@@ -100,6 +117,19 @@ def is_valid_output(path: Path, min_mb: float = MIN_VALID_MP4_MB) -> bool:
         return False
 
 
+def _has_audio_stream(path: Path) -> bool:
+    """Return whether ffprobe finds an audio stream in a rendered video."""
+    try:
+        result = subprocess.check_output(
+            ["ffprobe", "-v", "error", "-select_streams", "a:0",
+             "-show_entries", "stream=index", "-of", "csv=p=0", str(path)],
+            stderr=subprocess.DEVNULL,
+        )
+        return bool(result.decode().strip())
+    except (OSError, subprocess.CalledProcessError):
+        return False
+
+
 # ────────────────────────────────────────────────────────────────────────
 # FFmpeg mux
 # ────────────────────────────────────────────────────────────────────────
@@ -110,9 +140,19 @@ def stitch_av(raw_video: Path, voice: Path, pad: Path, out: Path):
     pad_samples = int(44100 * CLOSING_CARD_SEC)
 
     filter_complex = (
-        # mix voice + pad at unity gain, no clipping
+        # The generated voice is primary; the pad stays well below it.
         "[1:a][2:a]amix=inputs=2:duration=first:dropout_transition=0:"
-        "normalize=0[amix];"
+        "normalize=0[bed];"
+    )
+    if _has_audio_stream(raw_video):
+        filter_complex += (
+            "[0:a]volume=0.35[fx];"
+            "[bed][fx]amix=inputs=2:duration=first:dropout_transition=0:"
+            "normalize=0[amix];"
+        )
+    else:
+        filter_complex += "[bed]anull[amix];"
+    filter_complex += (
         # extend audio with silence so the closing card has bed
         f"[amix]apad=pad_len={pad_samples}[apadded];"
         # safety limiter to prevent inter-sample clipping
@@ -149,6 +189,11 @@ def parse_args():
     )
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--only", type=str, default="")
+    p.add_argument("--format", choices=["short", "lecture", "both"],
+                   default="both",
+                   help="Target a one-minute short, a three-minute lecture, or both.")
+    p.add_argument("--duration", type=float, default=0.0,
+                   help="Override total duration in seconds (0 = use CSV/audio length).")
     p.add_argument("--resume", action="store_true")
     p.add_argument("--chunk", type=int, default=0)
     p.add_argument("--total-chunks", type=int, default=1)
@@ -215,6 +260,20 @@ def process_batch():
     with CSV_FILE.open(encoding="utf-8") as f:
         rows = list(csv.DictReader(f))
 
+    target_orientation = {
+        "short": "horizontal",
+        "lecture": "vertical",
+    }.get(args.format, None)
+    if target_orientation is not None:
+        rows = [
+            row for row in rows
+            if (str_val(row, "orientation") or "vertical").lower() == target_orientation
+        ]
+        if not rows:
+            print(f"[{_ts()}] [FATAL] --format {args.format} matched no rows. "
+                  f"Expected orientation={target_orientation}.")
+            sys.exit(1)
+
     only_set = {sanitize_filename(x) for x in args.only.split(",")
                 if x.strip()}
     if only_set:
@@ -278,6 +337,7 @@ def process_batch():
                     skip_audio=args.skip_audio,
                     skip_stitch=args.skip_stitch,
                     orientation_override=args.orientation,
+                    duration_override=args.duration,
                 )
                 runlog.append({
                     "video_id": vid_id, "status": "ok",
@@ -335,7 +395,8 @@ def process_batch():
 def _render_one(row: dict, vid_id: str, final_output: Path,
                 draft: bool = False, no_voiceover: bool = False,
                 skip_audio: bool = False, skip_stitch: bool = False,
-                orientation_override: str = ""):
+                orientation_override: str = "",
+                duration_override: float = 0.0):
     voice = pad = None
     raw_output = OUTPUT_DIR / f"{vid_id}_raw.mp4"
 
@@ -351,6 +412,9 @@ def _render_one(row: dict, vid_id: str, final_output: Path,
                 speaker_wav=str(VOICE_SAMPLE),
                 output_dir=str(TEMP_AUDIO),
             )
+
+        if duration_override > 0:
+            duration = duration_override
 
         # ---- 2. Render -----------------------------------------------
         ori = (orientation_override
@@ -391,8 +455,8 @@ def _render_one(row: dict, vid_id: str, final_output: Path,
 
         if draft:
             cmd += ["--draft"]
-        if no_voiceover:
-            cmd += ["--no_voiceover"]
+        # The final mux supplies XTTS narration; do not add a second narrator.
+        cmd += ["--no_voiceover"]
 
         # Belt-and-suspenders: also set SAEM_ORIENTATION in the subprocess env
         env = {**os.environ, "SAEM_ORIENTATION": ori}

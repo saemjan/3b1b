@@ -186,7 +186,7 @@ brew install ffmpeg pkg-config cairo pango libpng jpeg giflib librsvg
 2. Python
 
 ```bash
-python3.11 -m venv .venv
+python3.12 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
 ```
@@ -213,6 +213,55 @@ python3 batch_runner.py --only feynman_d1_01_atoms
 ```
 
 Output: output_shorts/feynman_d1_01_atoms_final.mp4
+
+### 3Blue1Brown-style Feynman demo
+
+A concrete example built from Feynman's chapter on speed is included at [examples/feynman_speed_demo.csv](examples/feynman_speed_demo.csv). It follows the same schema as the production pipeline and is intentionally tuned toward the clean, one-idea-at-a-time teaching pattern used by 3Blue1Brown and Feynman.
+
+### Dual-format concept generator
+
+The repo now includes a generalized generator for arbitrary ideas and problems:
+
+```bash
+python3 tools/generate_topic_bundle.py \
+   --concept "Conservation of Energy" \
+   --problem "A 2 kg object falls 5 m. What is the loss in potential energy?" \
+   --kind both \
+   --output content_batch.csv
+```
+
+This writes a CSV bundle with:
+
+- one horizontal 1-minute short
+- one vertical 3-minute lecture
+- a focusable question → principle → result storyboard with beat transitions
+- narration paced to each target runtime and the supplied problem shown on screen
+- a falling-energy archetype with an animated object, complementary energy bars,
+  and an explicit $mgh$ result when mass and drop height are supplied
+
+The batch runner can target either style directly:
+
+```bash
+python3 batch_runner.py --format short --dry-run
+python3 batch_runner.py --format lecture --dry-run
+```
+
+The renderer adds procedural tick, transition, drone, and chime cues. `sound_design.py`
+generates these locally without external sound assets; the final mix keeps them
+quiet under the synthesized voice and a slowly shifting tonal bed. Full voice
+synthesis still requires the XTTS dependencies and `saem_voice_sample.wav`.
+
+The generator provides a reusable explanation structure; it does not solve an
+arbitrary problem or verify its physics. Review the narration and principle for
+the specific topic before publishing.
+
+```bash
+cp examples/feynman_speed_demo.csv content_batch.csv
+python3 schema_validator.py content_batch.csv
+python3 batch_runner.py --only feynman_demo_speed_limit --draft
+```
+
+This example is based on the concept: “Speed Is a Limit, Not a Ratio.” The visual grammar is built around a graph, a tangent, and a single focused sentence, so the short feels like an elegant lecture rather than a dense slide deck.
 
 ---
 

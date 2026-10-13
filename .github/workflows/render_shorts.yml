@@ -7,6 +7,8 @@ on:
       - "content_batch.csv"
       - "generate_csv.py"
       - "generate_audio.py"
+      - "sound_design.py"
+      - "tools/generate_topic_bundle.py"
       - "render_universal.py"
       - "batch_runner.py"
       - "schema_validator.py"
@@ -22,6 +24,18 @@ on:
         description: "vertical | horizontal"
         required: false
         default: "horizontal"
+      format:
+        description: "short | lecture | both"
+        required: false
+        default: "both"
+      concept:
+        description: "Optional concept/topic to generate"
+        required: false
+        default: ""
+      problem:
+        description: "Optional problem/scenario to include"
+        required: false
+        default: ""
       quality:
         description: "draft | 720p | 1080p | 4k"
         required: false
@@ -51,8 +65,22 @@ jobs:
           python-version: "3.11"
      
       - name: Generate content CSV
+        env:
+          TOPIC_CONCEPT: ${{ inputs.concept }}
+          TOPIC_PROBLEM: ${{ inputs.problem }}
+          VIDEO_FORMAT: ${{ inputs.format || 'both' }}
         run: |
-          if [ -f generate_csv.py ]; then
+          if [ -n "$TOPIC_CONCEPT" ] || [ -n "$TOPIC_PROBLEM" ]; then
+            if [ -z "$TOPIC_CONCEPT" ] || [ -z "$TOPIC_PROBLEM" ]; then
+              echo "::error::Provide both concept and problem, or leave both blank."
+              exit 1
+            fi
+            python3 tools/generate_topic_bundle.py \
+              --concept "$TOPIC_CONCEPT" \
+              --problem "$TOPIC_PROBLEM" \
+              --kind "$VIDEO_FORMAT" \
+              --output content_batch.csv
+          elif [ -f generate_csv.py ]; then
             python3 generate_csv.py
           fi
 
@@ -99,10 +127,16 @@ jobs:
               open("content_batch.csv", newline="", encoding="utf-8")))
           if not rows:
               sys.exit("::error::CSV has no data rows")
-          csv_orients = {r.get("orientation", "vertical").lower() for r in rows}
-          if len(csv_orients) != 1:
-              sys.exit(f"::error::CSV has mixed orientations: {csv_orients}")
-          csv_orient = csv_orients.pop()
+            csv_orients = {r.get("orientation", "").strip().lower() for r in rows}
+            invalid = csv_orients - {"", "vertical", "horizontal"}
+            if invalid:
+              sys.exit(f"::error::CSV has invalid orientations: {invalid}")
+            explicit_orients = csv_orients - {""}
+            if len(explicit_orients) > 1:
+              print("::notice::Rendering mixed orientations from per-row CSV values")
+              csv_orient = "vertical"  # fallback only for rows without a value
+            else:
+              csv_orient = next(iter(explicit_orients), "vertical")
           env_orient = os.environ.get("SAEM_ORIENTATION", "vertical").lower()
           if csv_orient != env_orient:
               print(f"::warning::CSV={csv_orient} workflow={env_orient} "
@@ -190,6 +224,7 @@ jobs:
         run: |
           echo "::group::batch_runner.py shard ${{ matrix.shard }}"
           python3 batch_runner.py \
+            --format "${{ inputs.format || 'both' }}" \
             --chunk ${{ matrix.shard }} \
             --total-chunks 4 \
             --retries 2 \
