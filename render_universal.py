@@ -36,6 +36,7 @@ import textwrap
 import numpy as np
 from manim import *
 from manim import rate_functions as rf
+from physics_simulation import accelerations, simulate_system
 
 # ============================================================ voiceover
 try:
@@ -1364,6 +1365,8 @@ class UniversalPhysicsScene(VoiceoverMovingCameraScene):
                 return self._prim_crystal_lattice(item)
             if itype == "projectile_motion":
                 return self._prim_projectile_motion(item)
+            if itype == "physics_simulation":
+                return self._prim_physics_simulation(item)
             if itype == "damped_oscillator":
                 return self._prim_damped_oscillator(item)
             if itype == "radiating_wave":
@@ -2554,6 +2557,246 @@ class UniversalPhysicsScene(VoiceoverMovingCameraScene):
                 y = (i - (rows - 1) / 2) * spacing
                 dots.add(Dot([x, y, 0], radius=0.08, color=color))
         return dots
+
+    def _prim_physics_simulation(self, item):
+        bodies = item.get("bodies")
+        forces = item.get("forces", [])
+        duration = float(item.get("duration", 8.0))
+        steps = item.get("steps", 600)
+        hold = float(item.get("hold", 1.5))
+        playback_duration = float(item.get("playback_duration", duration))
+        period = float(item.get("period", playback_duration + hold))
+        loop = bool(item.get("loop", False))
+        if (not np.isfinite(hold) or hold < 0
+                or not np.isfinite(playback_duration)
+                or playback_duration <= 0
+                or not np.isfinite(period) or period < playback_duration):
+            raise ValueError(
+                "physics_simulation requires finite hold >= 0, "
+                "playback_duration > 0, and period >= playback_duration."
+            )
+        if not isinstance(bodies, list) or not 1 <= len(bodies) <= 8:
+            raise ValueError("physics_simulation supports 1 through 8 bodies.")
+        masses, normalized_forces, states = simulate_system(
+            bodies, forces, duration, steps,
+        )
+
+        positions = states[:, :, :2]
+        anchors = [
+            force["anchor"]
+            for force in normalized_forces
+            if force["type"] == "spring" and force["other"] is None
+        ]
+        extent_points = [positions.reshape(-1, 2)]
+        if anchors:
+            extent_points.append(np.asarray(anchors))
+        all_points = np.concatenate(extent_points)
+        minimum = np.min(all_points, axis=0)
+        maximum = np.max(all_points, axis=0)
+        span = np.maximum(maximum - minimum, 0.5)
+        padding = float(item.get("padding", 1.4))
+        if not np.isfinite(padding) or padding <= 0:
+            raise ValueError("physics_simulation padding must be positive.")
+        frame_width = config.frame_width
+        frame_height = config.frame_height
+        scale = min(
+            frame_width * 0.78 / (span[0] + 2 * padding),
+            frame_height * 0.28 / (span[1] + 2 * padding),
+        )
+        center = np.array([0.0, 0.35, 0.0])
+        world_center = (minimum + maximum) / 2
+
+        def to_screen(point):
+            point = np.asarray(point)
+            return np.array([
+                (point[0] - world_center[0]) * scale + center[0],
+                (point[1] - world_center[1]) * scale + center[1],
+                0.0,
+            ])
+
+        gt = self.global_time
+        sample_dt = duration / steps
+
+        def elapsed_time():
+            if loop:
+                phase = gt.get_value() % period
+                if phase >= playback_duration:
+                    return duration
+                return phase / playback_duration * duration
+            return min(gt.get_value() / playback_duration * duration,
+                       duration)
+
+        def current_state():
+            elapsed = elapsed_time()
+            sample = elapsed / sample_dt
+            lower = min(int(sample), steps)
+            upper = min(lower + 1, steps)
+            fraction = sample - lower
+            return states[lower] * (1 - fraction) + states[upper] * fraction
+
+        def body_state(index):
+            return current_state()[index]
+
+        def body_position(index):
+            return to_screen(body_state(index)[:2])
+
+        def trail(index):
+            elapsed = elapsed_time()
+            last = min(int(elapsed / sample_dt), steps)
+            stride = max(1, steps // 240)
+            sample_indices = list(range(0, last + 1, stride))
+            if sample_indices[-1] != last:
+                sample_indices.append(last)
+            points = [
+                to_screen(positions[sample, index])
+                for sample in sample_indices
+            ]
+            if len(points) == 1:
+                points.append(points[0] + np.array([0.001, 0.0, 0.0]))
+            return VMobject().set_points_as_corners(points).set_stroke(
+                bodies[index].get("color", COLOR["field"]),
+                width=2.2,
+                opacity=0.62,
+            )
+
+        visuals = VGroup()
+        for index, body_data in enumerate(bodies):
+            body_color = body_data.get("color", COLOR["field"])
+            radius = float(body_data.get("radius", 0.22))
+            if not np.isfinite(radius) or radius <= 0:
+                raise ValueError(
+                    f"physics_simulation body {index} radius must be positive."
+                )
+            visuals.add(always_redraw(
+                lambda index=index: trail(index),
+            ))
+
+            def make_velocity(index=index, body_color=body_color):
+                state = body_state(index)
+                start = body_position(index)
+                delta = to_screen(state[:2] + 0.22 * state[2:4]) - start
+                length = np.linalg.norm(delta)
+                if length > 0.75:
+                    delta *= 0.75 / length
+                if length < 0.03:
+                    return Line(start, start + RIGHT * 0.001, stroke_opacity=0)
+                return Arrow(
+                    start, start + delta, buff=0, color=COLOR["neg"],
+                    stroke_width=2.5, max_tip_length_to_length_ratio=0.22,
+                )
+
+            def make_acceleration(index=index):
+                state = body_state(index)
+                acceleration = accelerations(
+                    current_state().reshape(-1), masses, normalized_forces,
+                )[index]
+                start = body_position(index)
+                delta = to_screen(state[:2] + 0.035 * acceleration) - start
+                length = np.linalg.norm(delta)
+                if length > 0.7:
+                    delta *= 0.7 / length
+                if length < 0.03:
+                    return Line(start, start + RIGHT * 0.001, stroke_opacity=0)
+                return Arrow(
+                    start, start + delta, buff=0, color=COLOR["force"],
+                    stroke_width=2.5, max_tip_length_to_length_ratio=0.22,
+                )
+
+            def make_body(index=index, body_data=body_data,
+                          body_color=body_color, radius=radius):
+                position = body_position(index)
+                screen_radius = min(0.42, max(0.12, radius * scale))
+                sphere = Circle(
+                    radius=screen_radius,
+                    color=body_color,
+                    fill_color=body_color,
+                    fill_opacity=0.95,
+                    stroke_width=1.5,
+                ).move_to(position)
+                highlight = Circle(
+                    radius=screen_radius * 0.23,
+                    color=COLOR["white"],
+                    fill_color=COLOR["white"],
+                    fill_opacity=0.8,
+                    stroke_width=0,
+                ).move_to(position + np.array([
+                    -screen_radius * 0.3, screen_radius * 0.35, 0,
+                ]))
+                center_dot = Dot(
+                    position, radius=max(0.025, screen_radius * 0.11),
+                    color=COLOR["bg"],
+                )
+                label = Text(
+                    str(body_data.get("label", f"m{index + 1}")),
+                    font_size=17,
+                    color=body_color,
+                ).next_to(sphere, UP, buff=0.08)
+                return VGroup(sphere, highlight, center_dot, label)
+
+            visuals.add(
+                always_redraw(make_velocity),
+                always_redraw(make_acceleration),
+                always_redraw(make_body),
+            )
+
+        for force in normalized_forces:
+            if force["type"] != "spring":
+                continue
+
+            def make_spring(force=force):
+                start = (
+                    to_screen(force["anchor"])
+                    if force["other"] is None
+                    else body_position(force["other"])
+                )
+                end = body_position(force["body"])
+                direction = end - start
+                length = np.linalg.norm(direction)
+                if length < 0.01:
+                    return Line(start, end, color=COLOR["muted"])
+                unit = direction / length
+                normal = np.array([-unit[1], unit[0], 0.0])
+                turns = 10
+                points = [start]
+                for turn in range(1, turns * 2):
+                    fraction = turn / (turns * 2)
+                    side = 0.11 if turn % 2 else -0.11
+                    points.append(start + direction * fraction + normal * side)
+                points.append(end)
+                return VMobject().set_points_as_corners(points).set_stroke(
+                    COLOR["muted"], width=2.2,
+                )
+
+            visuals.add(always_redraw(make_spring))
+
+        focus_body = item.get("focus_body", 0)
+        if not isinstance(focus_body, int) or not 0 <= focus_body < len(bodies):
+            raise ValueError("physics_simulation focus_body index is invalid.")
+
+        def readout():
+            elapsed = elapsed_time()
+            state = body_state(focus_body)
+            text = Text(
+                f"t = {elapsed:.2f} s    x = {state[0]:.2f} m    "
+                f"v = {np.linalg.norm(state[2:]):.2f} m/s",
+                font_size=17,
+                color=COLOR["white"],
+            )
+            if text.width > frame_width * 0.88:
+                text.scale_to_fit_width(frame_width * 0.88)
+            text.move_to([0, center[1] - span[1] * scale / 2 - 0.45, 0])
+            return text
+
+        legend = Text(
+            "velocity v (cyan)    acceleration a (green)  ·  schematic vectors",
+            font_size=15,
+            color=COLOR["muted"],
+        )
+        if legend.width > frame_width * 0.9:
+            legend.scale_to_fit_width(frame_width * 0.9)
+        legend.move_to([0, center[1] + span[1] * scale / 2 + 0.25, 0])
+        visuals.add(legend, always_redraw(readout))
+        return visuals
 
     def _prim_projectile_motion(self, item):
         v0 = float(item.get("v0", 5.0))

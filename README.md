@@ -250,6 +250,44 @@ understanding [doi:10.1006/ijhc.2002.1017](https://doi.org/10.1006/ijhc.2002.101
 These sources inform general explanatory principles; the visuals and wording
 in this example are original.
 
+### Reusable Newtonian simulation
+
+The [`physics_simulation` primitive](./render_universal.py) provides a
+declarative, force-driven starting point rather than another hand-drawn
+trajectory. Define bodies and forces in CSV JSON; the renderer integrates
+Newton's second law with RK4 and synchronizes full-body markers, trails,
+velocity, net acceleration, and a live state readout. The spring-and-mass
+lesson in
+[examples/physics_simulation_spring_demo.csv](examples/physics_simulation_spring_demo.csv)
+is a ready-to-render example:
+
+```bash
+python3 schema_validator.py examples/physics_simulation_spring_demo.csv
+python3 batch_runner.py --csv examples/physics_simulation_spring_demo.csv --dry-run
+python3 batch_runner.py --csv examples/physics_simulation_spring_demo.csv \
+  --only physics_simulation_spring_demo --draft
+```
+
+Supported force definitions are `uniform_acceleration` (a 2D acceleration
+vector), `linear_drag` (force `-b v`), `spring` (an anchor or another body,
+stiffness, rest length, and optional damping), and `central_gravity` (a fixed
+source with parameter `mu = GM`). Body entries use 2D position and velocity,
+mass, radius, label, and color. All values use a consistent unit system chosen
+by the author. `duration` is the simulated physical time; optional
+`playback_duration` sets how many video seconds it takes to show that
+simulation. By default it plays once and holds the final state. Set `loop` only
+when a reset is pedagogically appropriate; a loop can be misleading for a
+damped or otherwise non-periodic system. The solver rejects unknown forces,
+invalid input, and singular gravity rather than inventing a fallback.
+
+This is an extensible classical point-mass mechanics foundation, **not** an
+automatic solver for every physics problem. Contacts, rigid-body rotation,
+fluids, electromagnetism, quantum physics, and arbitrary natural-language
+problem solving need additional models/solvers. Each video still needs its
+assumptions, derivation, narration, and storyboard reviewed for correctness.
+The example shows `v` and net `a` with explicitly schematic arrow lengths; do
+not interpret those display lengths as calibrated measurements.
+
 ### Dual-format concept generator
 
 The repo now includes a generalized generator for arbitrary ideas and problems:
@@ -508,6 +546,8 @@ angular_measurement Angle arc with label
 crystal_lattice Grid of atoms
 projectile_motion Calculated projectile path with a full sphere, center marker,
 velocity and weight vectors, and live state values
+physics_simulation Multi-body 2D Newtonian motion integrated with RK4; supports
+uniform acceleration, linear drag, anchored/paired springs, and central gravity
 
 Advanced physics primitives
 

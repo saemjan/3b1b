@@ -81,6 +81,7 @@ KNOWN_PRIMITIVES = {
     "driven_electron", "color_triangle", "thermionic_emission",
     "beat_pattern", "mirror_scene", "medium_atoms",
     "falling_energy",
+    "physics_simulation",
     # Day 5 advanced
     "field_by_opacity", "polar_pattern", "phase_portrait",
     "light_wave_slice", "sliced_wave", "spectral_sum", "stream_field",
