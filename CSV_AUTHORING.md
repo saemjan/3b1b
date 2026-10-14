@@ -83,7 +83,7 @@ The validator's approximate narration windows are 112–180 words for a 60-secon
 ]
 ```
 
-The renderer also routes `electric_field`, `magnetic_field`, and `electromagnetic_wave`; `physics_simulation`; `geometry`; `calculus_graph`, `derivative_tangent`, `integral_area`, and `riemann_sum`; and `linear_algebra`. Core motion primitives include `falling_energy`, `projectile_motion`, `momentum_exchange`, `pendulum`, `wave`, and `two_source_waves`. Check the renderer router and the primitive-specific tests before using a new type.
+The renderer also routes `electric_field`, `magnetic_field`, and `electromagnetic_wave`; `physics_simulation`; `geometry`; `calculus_graph`, `derivative_tangent`, `integral_area`, and `riemann_sum`; `linear_algebra`; `fluid_dynamics`; and `rotational_motion`. Fluid operations are `venturi` and `hydrostatic`. Linear-algebra operations include vector/matrix products, inversion, $A x=b$ solving, and 2D transforms. Core motion primitives include `falling_energy`, `projectile_motion`, `momentum_exchange`, `pendulum`, `wave`, and `two_source_waves`. Check the renderer router and primitive-specific tests before using a new type.
 
 For story beats, give every focused visual a stable ID, then reference that ID in `beats_json`:
 

@@ -7,6 +7,10 @@ from linear_algebra_engine import (
     cross_product,
     determinant,
     dot_product,
+    matrix_inverse,
+    matrix_multiply,
+    matrix_vector_product,
+    solve_linear_system,
     vector_add,
 )
 from render_universal import UniversalPhysicsScene
@@ -46,6 +50,32 @@ class LinearAlgebraEngineTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "matrix must be"):
                     determinant(matrix)
 
+    def test_matrix_products_and_inverse(self):
+        matrix = [[2, 1], [1, 1]]
+        np.testing.assert_allclose(
+            matrix_vector_product(matrix, [3, 4]), [10, 7],
+        )
+        np.testing.assert_allclose(
+            matrix_multiply(matrix, [[1, 2], [3, 4]]),
+            [[5, 8], [4, 6]],
+        )
+        np.testing.assert_allclose(
+            matrix_multiply(matrix, matrix_inverse(matrix)),
+            np.eye(2), atol=1e-12,
+        )
+
+    def test_inverse_rejects_singular_matrix(self):
+        with self.assertRaisesRegex(ValueError, "singular"):
+            matrix_inverse([[1, 2], [2, 4]])
+
+    def test_linear_system_solver_uses_pivoting(self):
+        np.testing.assert_allclose(
+            solve_linear_system([[0, 1], [2, 3]], [3, 13]),
+            [2, 3],
+        )
+        with self.assertRaisesRegex(ValueError, "singular"):
+            solve_linear_system([[1, 2], [2, 4]], [3, 6])
+
     def test_visuals_build_and_route_through_renderer(self):
         scene = UniversalPhysicsScene(scene_kwargs={})
         for operation, fields in (
@@ -53,6 +83,11 @@ class LinearAlgebraEngineTests(unittest.TestCase):
             ("dot", {"a": [2, 1], "b": [-1, 2]}),
             ("cross", {"a": [2, 1], "b": [-1, 2]}),
             ("determinant", {"matrix": [[2, -1], [1, 2]]}),
+            ("matrix_vector", {
+                "matrix": [[2, 1], [1, 1]], "vector": [3, 4],
+            }),
+            ("transform", {"matrix": [[1, 1], [0, 1]]}),
+            ("solve", {"matrix": [[2, 1], [1, 1]], "rhs": [5, 3]}),
         ):
             item = {"type": "linear_algebra", "operation": operation, **fields}
             visual = scene._build_primitive(item, 0)

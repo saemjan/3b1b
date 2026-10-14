@@ -436,13 +436,14 @@ constraints are reported explicitly rather than regularized.
 ### Linear algebra graphics
 
 [`linear_algebra_engine.py`](./linear_algebra_engine.py) provides numeric
-`vector_add`, `dot_product`, `cross_product`, and `determinant` helpers, and a
-`linear_algebra` visual primitive with `vectors`, `dot`, `cross`, or
-`determinant` operations. Vector calculations accept finite 2D or 3D inputs
-with matching dimensions. The cross product returns a 3D vector for 3D inputs
-and the signed z-component (scalar) for 2D inputs. Numeric determinants
-support square matrices through 8×8; determinant graphics currently show the
-signed area of a 2×2 matrix's column parallelogram.
+`vector_add`, `dot_product`, `cross_product`, `matrix_vector_product`,
+`matrix_multiply`, `matrix_inverse`, `solve_linear_system`, and `determinant` helpers, and a
+`linear_algebra` visual primitive with `vectors`, `dot`, `cross`,
+`determinant`, `matrix_vector`, `transform`, and 2×2 `solve` operations. Vector calculations
+accept finite 2D or 3D inputs with matching dimensions. The cross product
+returns a 3D vector for 3D inputs and the signed z-component (scalar) for 2D
+inputs. Matrix calculations are bounded to dimensions up to 8; the transform
+visual is 2D, while determinant diagrams show signed area for a 2×2 matrix.
 
 ```json
 [
@@ -465,8 +466,59 @@ signed area of a 2×2 matrix's column parallelogram.
     "id": "determinant",
     "operation": "determinant",
     "matrix": [[2, -1], [1, 2]]
+  },
+  {
+    "type": "linear_algebra",
+    "id": "system_solution",
+    "operation": "solve",
+    "matrix": [[2, 1], [1, 1]],
+    "rhs": [5, 3]
   }
 ]
+```
+
+### Fluid dynamics
+
+[`fluid_dynamics_engine.py`](./fluid_dynamics_engine.py) provides validated
+hydrostatic pressure, continuity velocity, Bernoulli pressure, and Reynolds
+number calculations. The `fluid_dynamics` visual supports `venturi` flow
+through a constriction and a `hydrostatic` pressure diagram. The Venturi visual
+uses pipe height as area per unit width and assumes steady, incompressible,
+ideal flow; state those assumptions in narration.
+
+```json
+{
+  "type": "fluid_dynamics",
+  "id": "venturi",
+  "operation": "venturi",
+  "inlet_height": 1.8,
+  "throat_height": 0.9,
+  "inlet_velocity": 2.0,
+  "density": 1000,
+  "inlet_pressure": 101325,
+  "particle_count": 14
+}
+```
+
+### Rotational motion
+
+[`rotational_motion_engine.py`](./rotational_motion_engine.py) calculates
+moment of inertia for solid disks/cylinders, hoops, and rods about standard
+axes, then computes torque-driven angular acceleration, angular velocity,
+angular displacement, rotational kinetic energy, and angular momentum. The
+`rotational_motion` visual animates the body, radius marker, and tangential
+velocity cue.
+
+```json
+{
+  "type": "rotational_motion",
+  "id": "wheel",
+  "shape": "solid_disk",
+  "mass": 2.0,
+  "radius": 0.5,
+  "angular_velocity": 1.5,
+  "torque": 0.5
+}
 ```
 
 ### Dual-format concept generator
@@ -699,7 +751,9 @@ calculus_graph / derivative_tangent Function plot; secant and tangent at a selec
 integral_area / riemann_sum Shaded definite-integral region and finite-sum rectangles
 electric_field / magnetic_field Coulomb point-charge and Biot–Savart wire-field maps
 electromagnetic_wave Synchronized electric and magnetic plane-wave traces
-linear_algebra Vector addition, dot/cross products, or 2D determinant area
+linear_algebra Vector/matrix products and systems, inverse, dot/cross, determinant, 2D transforms
+fluid_dynamics Hydrostatic pressure, Venturi continuity/Bernoulli flow, Reynolds number
+rotational_motion Moment of inertia, torque, angular kinematics, energy and momentum
 shape / lens / circle / rectangle / ellipse / polygon Geometric figures
 text Plain or LaTeX text
 group Container for child primitives

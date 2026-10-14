@@ -4,7 +4,7 @@ from __future__ import annotations
 import math
 
 import numpy as np
-from manim import Arrow, DashedLine, Dot, Line, Polygon, Text, VGroup, config
+from manim import Arrow, DOWN, DashedLine, Dot, Line, Polygon, Text, VGroup, config
 
 
 def _vector(value, name, *, dimensions=(2, 3)):
@@ -78,6 +78,91 @@ def determinant(matrix):
                 factors[:, None] * values[column, column + 1:]
             )
     return float(sign * result)
+
+
+def _matrix(value, name="matrix", *, square=False):
+    try:
+        values = np.asarray(value, dtype=float)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{name} must contain finite numeric values.") from exc
+    if (values.ndim != 2 or not 1 <= values.shape[0] <= 8
+            or not 1 <= values.shape[1] <= 8
+            or not np.all(np.isfinite(values))):
+        raise ValueError(f"{name} must be a finite matrix with dimensions 1 through 8.")
+    if square and values.shape[0] != values.shape[1]:
+        raise ValueError(f"{name} must be square.")
+    return values
+
+
+def matrix_vector_product(matrix, vector):
+    """Multiply a finite 1-8 by 1-8 matrix by a matching finite vector."""
+    values = _matrix(matrix)
+    vector = _vector(vector, "vector", dimensions=tuple(range(1, 9)))
+    if values.shape[1] != vector.shape[0]:
+        raise ValueError("matrix columns must match vector dimensions.")
+    return values @ vector
+
+
+def matrix_multiply(left, right):
+    """Multiply compatible finite matrices with dimensions up to 8 by 8."""
+    a = _matrix(left, "left matrix")
+    b = _matrix(right, "right matrix")
+    if a.shape[1] != b.shape[0]:
+        raise ValueError("left matrix columns must match right matrix rows.")
+    return a @ b
+
+
+def matrix_inverse(matrix):
+    """Invert a nonsingular finite square matrix using pivoted elimination."""
+    values = _matrix(matrix, square=True).copy()
+    size = values.shape[0]
+    augmented = np.concatenate((values, np.eye(size)), axis=1)
+    tolerance = (np.finfo(float).eps
+                 * max(1.0, float(np.linalg.norm(values, ord=np.inf)))
+                 * size)
+    for column in range(size):
+        pivot = column + int(np.argmax(np.abs(augmented[column:, column])))
+        if abs(augmented[pivot, column]) <= tolerance:
+            raise ValueError("matrix is singular and has no inverse.")
+        if pivot != column:
+            augmented[[column, pivot]] = augmented[[pivot, column]]
+        augmented[column] /= augmented[column, column]
+        for row in range(size):
+            if row != column:
+                augmented[row] -= augmented[row, column] * augmented[column]
+    return augmented[:, size:]
+
+
+def solve_linear_system(matrix, right_hand_side):
+    """Solve a finite square system A x = b using partial pivoting."""
+    values = _matrix(matrix, square=True).copy()
+    rhs = _vector(
+        right_hand_side, "right_hand_side",
+        dimensions=tuple(range(1, 9)),
+    ).copy()
+    size = values.shape[0]
+    if rhs.shape[0] != size:
+        raise ValueError("right_hand_side length must match matrix rows.")
+    augmented = np.column_stack((values, rhs))
+    tolerance = (np.finfo(float).eps
+                 * max(1.0, float(np.linalg.norm(values, ord=np.inf)))
+                 * size)
+    for column in range(size):
+        pivot = column + int(np.argmax(np.abs(augmented[column:, column])))
+        if abs(augmented[pivot, column]) <= tolerance:
+            raise ValueError("matrix is singular; system has no unique solution.")
+        if pivot != column:
+            augmented[[column, pivot]] = augmented[[pivot, column]]
+        for row in range(column + 1, size):
+            factor = augmented[row, column] / augmented[column, column]
+            augmented[row, column:] -= factor * augmented[column, column:]
+    solution = np.empty(size, dtype=float)
+    for row in range(size - 1, -1, -1):
+        remainder = augmented[row, -1] - np.dot(
+            augmented[row, row + 1:size], solution[row + 1:size],
+        )
+        solution[row] = remainder / augmented[row, row]
+    return solution
 
 
 def _finite_number(value, name):
@@ -223,8 +308,93 @@ def _draw_determinant(item):
     )
 
 
+def _draw_matrix_transform(item, *, operation):
+    values = _matrix(item.get("matrix"), square=True)
+    if values.shape != (2, 2):
+        raise ValueError("matrix transform visual requires a 2x2 matrix.")
+    vector = None
+    result = None
+    if operation == "matrix_vector":
+        vector = _vector(item.get("vector"), "vector", dimensions=(2,))
+        result = matrix_vector_product(values, vector)
+
+    center, scale = _canvas(item)
+    columns = [values[:, index] for index in range(2)]
+    extent = max(
+        np.linalg.norm(columns[0] + columns[1]),
+        np.linalg.norm(columns[0]), np.linalg.norm(columns[1]),
+        1.0,
+    )
+    if vector is not None:
+        extent = max(extent, np.linalg.norm(vector), np.linalg.norm(result))
+    scale *= min(1.0, 2.6 / (extent * scale))
+    corners = [
+        center,
+        center + [columns[0][0] * scale, columns[0][1] * scale, 0],
+        center + [(columns[0][0] + columns[1][0]) * scale,
+                  (columns[0][1] + columns[1][1]) * scale, 0],
+        center + [columns[1][0] * scale, columns[1][1] * scale, 0],
+    ]
+    color = item.get("area_color", "#2ECC71")
+    group = VGroup(
+        Line(center + [-3, 0, 0], center + [3, 0, 0],
+             color="#555B66", stroke_width=1),
+        Line(center + [0, -2.5, 0], center + [0, 2.5, 0],
+             color="#555B66", stroke_width=1),
+        Polygon(*corners, color=color, fill_color=color,
+                fill_opacity=0.14, stroke_width=2),
+        _arrow(center, columns[0], color="#4CC9F0", scale=scale,
+               label="A e1"),
+        _arrow(center, columns[1], color="#F1C40F", scale=scale,
+               label="A e2"),
+    )
+    if vector is not None:
+        group.add(
+            DashedLine(
+                center, center + [vector[0] * scale, vector[1] * scale, 0],
+                color="#8A8F9C", stroke_width=1.5,
+            ),
+            _arrow(center, result, color="#FF4B4B", scale=scale,
+                   label="A v"),
+            Text(
+                f"A v = ({result[0]:g}, {result[1]:g})",
+                font_size=19, color="#FF4B4B",
+            ).move_to(center + [0, -3.0, 0]),
+        )
+    else:
+        group.add(Text(
+            f"det(A) = {determinant(values):g}",
+            font_size=20, color=color,
+        ).move_to(center + [0, -3.0, 0]))
+    return group
+
+
+def _draw_linear_system(item):
+    values = _matrix(item.get("matrix"), square=True)
+    if values.shape != (2, 2):
+        raise ValueError("linear-system visual requires a 2x2 matrix.")
+    rhs = _vector(item.get("rhs"), "rhs", dimensions=(2,))
+    solution = solve_linear_system(values, rhs)
+    center, _ = _canvas(item)
+    row_one = Text(
+        f"{values[0, 0]:g}x + {values[0, 1]:g}y = {rhs[0]:g}",
+        font_size=24, color="#F2F3F5",
+    )
+    row_two = Text(
+        f"{values[1, 0]:g}x + {values[1, 1]:g}y = {rhs[1]:g}",
+        font_size=24, color="#F2F3F5",
+    )
+    result = Text(
+        f"x = {solution[0]:g}     y = {solution[1]:g}",
+        font_size=26, color="#2ECC71",
+    )
+    return VGroup(row_one, row_two, result).arrange(
+        DOWN, buff=0.42,
+    ).move_to(center)
+
+
 def build_linear_algebra_visual(item):
-    """Build a vector, dot, cross, or 2D determinant visualization."""
+    """Build vector, matrix, dot/cross, determinant, or transform visuals."""
     if not isinstance(item, dict):
         raise ValueError("linear algebra visual must be an object.")
     operation = str(item.get("operation", "vectors")).lower()
@@ -232,6 +402,11 @@ def build_linear_algebra_visual(item):
         return _draw_vectors(item, operation=operation)
     if operation == "determinant":
         return _draw_determinant(item)
+    if operation in ("matrix_vector", "transform"):
+        return _draw_matrix_transform(item, operation=operation)
+    if operation == "solve":
+        return _draw_linear_system(item)
     raise ValueError(
-        "linear algebra operation must be vectors, dot, cross, or determinant."
+        "linear algebra operation must be vectors, dot, cross, determinant, "
+        "matrix_vector, transform, or solve."
     )

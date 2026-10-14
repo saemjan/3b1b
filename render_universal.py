@@ -38,9 +38,11 @@ from manim import *
 from manim import rate_functions as rf
 from calculus_engine import build_calculus_visual
 from electromagnetics_engine import build_electromagnetics_visual
+from fluid_dynamics_engine import build_fluid_visual
 from geometry_engine import add_rigid_motion, build_geometry
 from linear_algebra_engine import build_linear_algebra_visual
 from physics_simulation import accelerations, simulate_system
+from rotational_motion_engine import build_rotational_visual
 
 # ============================================================ voiceover
 try:
@@ -1315,8 +1317,12 @@ class UniversalPhysicsScene(VoiceoverMovingCameraScene):
                     "electric_field", "magnetic_field",
                     "electromagnetic_wave"):
                 return build_electromagnetics_visual(item, kind=itype)
+            if itype == "fluid_dynamics":
+                return build_fluid_visual(item)
             if itype == "linear_algebra":
                 return build_linear_algebra_visual(item)
+            if itype == "rotational_motion":
+                return build_rotational_visual(item, self.global_time)
             if itype in ("shape", "lens", "circle", "rectangle",
                          "ellipse", "polygon"):
                 return self._prim_shape(item)

@@ -49,9 +49,11 @@ Domain modules currently routed by the renderer:
 |---|---|
 | `calculus_engine.py` | Safe expression parsing and function, derivative/tangent, integral-area, and Riemann-sum visuals. |
 | `electromagnetics_engine.py` | Numeric Coulomb electric fields, finite-wire Biot-Savart fields, and synchronized plane-wave visuals. |
+| `fluid_dynamics_engine.py` | Hydrostatic pressure, continuity, Bernoulli pressure, Reynolds number, and Venturi/hydrostatic visuals. |
 | `geometry_engine.py` | Dimension-checked 1D/2D/3D geometry builders and rigid translation/rotation updates. |
-| `linear_algebra_engine.py` | 2D/3D vector arithmetic, dot/cross products, numeric determinants, and 2D vector/area diagrams. |
+| `linear_algebra_engine.py` | 2D/3D vector arithmetic, matrix products/inversion/linear solves, dot/cross products, determinants, and 2D transform diagrams. |
 | `physics_simulation.py` | Deterministic 2D Newtonian integration using RK4, with uniform acceleration, drag, springs, and central gravity. |
+| `rotational_motion_engine.py` | Standard rigid-body inertias, torque/angular kinematics, rotational energy/momentum, and an animated rotor. |
 | `visual_kit.py` | Camera emphasis, callouts, reveals, spotlighting, and transitions. |
 
 The main renderer also owns specialized visual primitives such as falling-energy transfer, pendulums, orbit, projectile motion, random walks, momentum exchange, waves, and interference. `sound_design.py` produces local transition and emphasis cues.
