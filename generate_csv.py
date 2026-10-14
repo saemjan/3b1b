@@ -1,568 +1,1088 @@
 #!/usr/bin/env python3
 """
-generate_csv.py — Day 5 batch.
+Generate content_batch.csv:
+  - 10 horizontal 3-minute concept lectures (target_duration_sec=180)
+  - 10 vertical 1-minute PYQ shorts           (target_duration_sec=60)
 
-Feynman Lectures Vol. II, Chapters 9-10:
-  Ch 9 — Electricity in the Atmosphere
-  Ch 10 — Dielectrics
-
-10 rows: 8 GENERIC + 2 PYQ, horizontal long-form.
-
-Run:  python3 generate_csv.py
+Frame bounds:
+  horizontal: x in [-8, 8],   y in [-4.5, 4.5]
+  vertical:   x in [-4.5, 4.5], y in [-8, 8]
 """
 import csv
 import json
 
-HEADER = [
-    "video_id", "concept_type", "header_title", "tagline",
-    "question_text", "option_a", "option_b", "option_c", "option_d",
-    "correct_answer", "equations_json", "visual_data_json",
-    "audio_script", "orientation",
+COLUMNS = [
+    "video_id", "concept_type", "header_title", "tagline", "question_text",
+    "option_a", "option_b", "option_c", "option_d", "correct_answer",
+    "equations_json", "visual_data_json", "audio_script", "orientation",
+    "beats_json", "target_duration_sec",
 ]
 
+rows = []
 
-def row(video_id, concept_type, header_title, tagline,
-        question_text="", options=("", "", "", ""), correct="",
-        equations=None, visuals=None, audio="",
-        orientation="horizontal"):
-    opts = list(options) + [""] * (4 - len(options))
-    return {
-        "video_id":          video_id,
-        "concept_type":      concept_type,
-        "header_title":      header_title,
-        "tagline":           tagline,
-        "question_text":     question_text,
-        "option_a":          opts[0],
-        "option_b":          opts[1],
-        "option_c":          opts[2],
-        "option_d":          opts[3],
-        "correct_answer":    correct,
-        "equations_json":    json.dumps(equations or []),
-        "visual_data_json":  json.dumps(visuals or []),
-        "audio_script":      audio,
-        "orientation":       orientation,
-    }
+def add(**kw):
+    base = {c: "" for c in COLUMNS}
+    base.update(kw)
+    for key in ("equations_json", "visual_data_json", "beats_json"):
+        if isinstance(base.get(key), (list, dict)):
+            base[key] = json.dumps(base[key], ensure_ascii=False)
+    rows.append(base)
 
 
-ROWS = []
+# =====================================================================
+# SECTION A — 10 HORIZONTAL 3-MINUTE CONCEPT LECTURES
+# orientation="horizontal", target_duration_sec=180, concept_type=GENERIC
+# Frame: x in [-8, 8], y in [-4.5, 4.5]
+# =====================================================================
 
-# ============================================================ 01
-ROWS.append(row(
-    video_id="feynman_v2_day5_01_atmospheric_gradient",
+# A1. Newton's Second Law
+add(
+    video_id="lecture_newton_second_law",
     concept_type="GENERIC",
-    header_title="The 100-Volt Sky",
-    tagline="Why your head is 200 volts above your feet",
-    equations=[
-        r"E_{\text{atm}} \approx 100\ \text{V/m (downward)}",
-        r"\phi_{\text{top}} - \phi_{\text{ground}} \approx 4 \times 10^5\ \text{V}",
+    header_title="Force Changes Motion",
+    tagline="The net force sets the acceleration",
+    question_text="How does net force determine acceleration?",
+    equations_json=[
+        r"F_{net}=ma",
+        r"a=\frac{F_{net}}{m}",
+        r"F_x=ma_x,\ F_y=ma_y,\ F_z=ma_z",
     ],
-    visuals=[
-        {"type": "line", "start": [-4.0, -2.0, 0], "end": [4.0, -2.0, 0],
-         "color": "#3498DB", "stroke_width": 3},
-        {"type": "field", "direction": "DOWN", "rows": 5, "opacity": 0.35,
+    visual_data_json=[
+        {"type": "falling_energy", "id": "fall",
+         "mass": 2.0, "height": 8.0, "g": 9.8, "color": "#4CC9F0"},
+        {"type": "geometry", "id": "force_arrow", "dimension": 2,
+         "kind": "polyline", "points": [[-6.0, 3.0], [-4.0, 3.0]],
          "color": "#F1C40F"},
-        {"type": "vector", "start": [0.0, 0.5, 0], "end": [0.0, -0.8, 0],
-         "color": "#E74C3C", "label": "E"},
-        {"type": "text", "text": "100 V/m", "pos": [-2.5, 1.5, 0],
-         "color": "#F1C40F", "font_size": 20},
-        {"type": "text", "text": "0 V", "pos": [2.5, -2.3, 0],
-         "color": "#8A8F9C", "font_size": 18},
     ],
-    audio=(
-        "On an ordinary day, outdoors, over flat desert country, the "
-        "electric potential increases as we go upward from the surface of "
-        "the earth by about one hundred volts per meter. So there is a "
-        "vertical electric field in the air. The sign of the field "
-        "corresponds to a negative charge on the earth's surface. This "
-        "means that outdoors the potential at the height of your nose is "
-        "two hundred volts higher than the potential at your feet. Now "
-        "you might ask: why don't we get a shock? Why don't we just put "
-        "a pair of electrodes one meter apart and light up a bulb with "
-        "this potential? The answer is that your body is a fairly good "
-        "conductor. If you are standing on the ground, you and the "
-        "ground together form one equipotential surface. The field lines "
-        "bend around you. So the potential difference between your head "
-        "and your feet is essentially zero. If you were a perfect "
-        "insulator, you would feel this field. But you are not. There is "
-        "another interesting consequence. The total potential difference "
-        "from the surface of the earth to the top of the atmosphere is "
-        "about four hundred thousand volts. That is the voltage of a "
-        "small Van de Graaff generator. Where does it come from? That is "
-        "one of the most fascinating questions in atmospheric physics, "
-        "and the answer involves thunderstorms, cosmic rays, and the "
-        "entire planet working as a giant electrical machine."
+    audio_script=(
+        "Newton's second law is the central equation of mechanics. It says that "
+        "the net force on an object equals its mass times its acceleration. In "
+        "symbols, F equals m a. This single equation explains why a heavy truck "
+        "accelerates more slowly than a small car under the same engine force, "
+        "and why a rocket needs enormous thrust to lift off the ground. The law "
+        "has three ingredients. First, force is a vector, with both magnitude "
+        "and direction. Second, mass measures inertia, the resistance to changes "
+        "in motion. Third, acceleration is the rate at which velocity changes. "
+        "When you push a shopping cart, your push is the force. The cart's mass "
+        "resists the push. The result is an acceleration that is larger when "
+        "the push is stronger, and smaller when the cart is heavier. Notice "
+        "that the law works in all three dimensions. We can write it component "
+        "by component: F x equals m a x, F y equals m a y, and F z equals m a z. "
+        "Each direction is independent. This is why projectile motion separates "
+        "so cleanly into horizontal motion at constant velocity and vertical "
+        "motion under constant acceleration. A ball thrown across a room moves "
+        "forward at a steady speed while falling faster and faster. The two "
+        "motions do not interfere, because forces in one direction do not affect "
+        "motion in a perpendicular direction. Newton's second law also tells us "
+        "what happens when the net force is zero. Then the acceleration is zero, "
+        "and the object either stays at rest or moves in a straight line at "
+        "constant speed. This is Newton's first law, and we see that it is "
+        "really a special case of the second law. The second law is a cause and "
+        "effect statement: forces cause accelerations. It is not velocity that "
+        "requires a force to maintain, but changes in velocity. An object in "
+        "motion needs no force to keep moving; it needs a force only to speed "
+        "up, slow down, or change direction. In the visual, we see a ball "
+        "falling under gravity. The only force is its weight, m g, directed "
+        "down. So the acceleration is g, directed down, independent of the "
+        "mass. A heavy ball and a light ball fall together when air resistance "
+        "is negligible. This was Galileo's great insight, and it follows "
+        "directly from Newton's second law when we set the force equal to the "
+        "weight. The second law is the bridge between force and motion."
     ),
-))
+    orientation="horizontal",
+    beats_json=[
+        {"type": "hook", "focus": "fall"},
+        {"type": "law", "focus": "force_arrow", "transition": "wipe"},
+        {"type": "punchline", "focus": "fall"},
+    ],
+    target_duration_sec=180,
+)
 
-# ============================================================ 02
-ROWS.append(row(
-    video_id="feynman_v2_day5_02_cosmic_rays",
+# A2. Gravitation and Orbits
+add(
+    video_id="lecture_gravity_orbit",
     concept_type="GENERIC",
-    header_title="Where Do Air Ions Come From?",
-    tagline="The surprising discovery of cosmic rays",
-    equations=[
-        r"\text{Ionization} \uparrow \text{ with altitude}",
-        r"E_{\text{cosmic}} \sim 10^9\ \text{eV}",
+    header_title="Gravity Guides an Orbit",
+    tagline="Falling forever around a planet",
+    question_text="Why does a satellite keep falling without reaching Earth?",
+    equations_json=[
+        r"F=\frac{GMm}{r^2}",
+        r"v=\sqrt{\frac{GM}{r}}",
+        r"T^2=\frac{4\pi^2 r^3}{GM}",
+        r"v_{esc}=\sqrt{\frac{2GM}{R}}",
     ],
-    visuals=[
-        {"type": "exponential_atmosphere", "num_particles": 40,
-         "height": 5.0, "scale_height": 1.5, "color": "#F1C40F"},
-        {"type": "radiating_wave", "pos": [-4.0, 3.5, 0],
-         "num_rings": 3, "wavelength": 0.5,
-         "color": "#E74C3C"},
-        {"type": "text", "text": "cosmic ray", "pos": [-3.0, 4.5, 0],
-         "color": "#E74C3C", "font_size": 20},
+    visual_data_json=[
+        {"type": "orbit", "id": "orbit", "radius": 5.0,
+         "mass": 1.0, "color": "#4CC9F0"},
+        {"type": "vector", "id": "gravity_vec",
+         "start": [5.0, 0.0, 0.0], "end": [3.5, 0.0, 0.0],
+         "color": "#F1C40F"},
     ],
-    audio=(
-        "The conductivity of the air comes from ions. Here and there among "
-        "the air molecules there is an ion, a molecule of oxygen that has "
-        "gained or lost an electron. But where do these ions come from? "
-        "The first guess, made in the early nineteen hundreds, was that "
-        "they came from radioactive materials in the earth. The earth has "
-        "traces of radium, uranium, potassium, and these all emit "
-        "radiation that could ionize the air. If that theory were correct, "
-        "then if we went up to high altitude we should find less "
-        "ionization, because the radioactivity is all in the ground. So in "
-        "nineteen twelve, Victor Hess carried an ionization detector up "
-        "in a balloon. He expected to see the ionization fall with "
-        "altitude. What he found was exactly the opposite. The ionization "
-        "per unit volume increased as he went up. This was the most "
-        "dramatic finding in the entire history of atmospheric "
-        "electricity. It was so dramatic, in fact, that it required a "
-        "branching off of an entirely new subject. The ionization was "
-        "coming from outside the earth. Hess had discovered cosmic rays, "
-        "for which he would later receive the Nobel Prize. These are "
-        "charged particles, mostly protons and atomic nuclei, that arrive "
-        "at the earth with enormous energies. They come from the sun, "
-        "from supernovae, from active galaxies. When they hit the upper "
-        "atmosphere, they shatter air molecules into ions. These ions are "
-        "what give the atmosphere its conductivity. It is a beautiful "
-        "example of how a small anomaly, if taken seriously, can open up "
-        "an entirely new window on the universe."
+    audio_script=(
+        "Gravity is the force that holds the planets in their orbits around the "
+        "Sun, and it is also the force that pulls an apple from a tree. "
+        "Newton's great insight was that these are the same force, governed by "
+        "a single law. The gravitational force between two masses is "
+        "proportional to the product of the masses, and inversely proportional "
+        "to the square of the distance between them. In symbols, F equals G M m "
+        "over r squared. The constant G is the same everywhere in the universe. "
+        "For a planet in a circular orbit around the Sun, the gravitational "
+        "force provides the centripetal acceleration. Setting the gravitational "
+        "force equal to m v squared over r gives us the orbital speed, v equals "
+        "the square root of G M over r. This tells us that the orbital speed "
+        "depends only on the mass of the central body and the radius of the "
+        "orbit, not on the mass of the orbiting body. If we square this and "
+        "substitute the orbital period T equals two pi r over v, we obtain "
+        "Kepler's third law: T squared is proportional to r cubed. This is a "
+        "remarkably simple result that describes the motion of every planet, "
+        "moon, and satellite in the solar system. The orbit visual shows a "
+        "satellite in a circular path around a central mass. The gravitational "
+        "force always points toward the center, so the satellite is "
+        "continuously falling toward the central body. But because it also has "
+        "a tangential velocity, it never actually reaches it. It keeps falling "
+        "around the curve. If the tangential speed is too small, the satellite "
+        "falls inward and crashes. If it is too large, the satellite escapes "
+        "along a parabolic or hyperbolic path. The speed required to escape is "
+        "the escape velocity, v escape equals the square root of two G M over "
+        "R. This is exactly the square root of two times the circular orbital "
+        "speed at the same radius. So a satellite launched at the circular "
+        "speed needs only a factor of root two more speed to escape entirely. "
+        "Gravity is the architect of the solar system and the universe beyond."
     ),
-))
+    orientation="horizontal",
+    beats_json=[
+        {"type": "hook", "focus": "orbit"},
+        {"type": "law", "focus": "gravity_vec", "transition": "wipe"},
+        {"type": "punchline", "focus": "orbit"},
+    ],
+    target_duration_sec=180,
+)
 
-# ============================================================ 03
-ROWS.append(row(
-    video_id="feynman_v2_day5_03_thunderstorm_cells",
+# A3. Momentum and Collisions
+add(
+    video_id="lecture_momentum_collision",
     concept_type="GENERIC",
-    header_title="Anatomy of a Thunderstorm",
-    tagline="Why warm, wet air rises to the sky",
-    equations=[
-        r"\text{Adiabatic cooling: } T \uparrow \text{ height} \rightarrow T \downarrow",
-        r"\text{Moist air cools slower (latent heat)}",
-        r"\text{Thunderstorm cell} \approx 10\ \text{km tall}",
+    header_title="Momentum Is Exchanged",
+    tagline="In an isolated collision, total momentum is conserved",
+    question_text="What happens to two carts during an isolated collision?",
+    equations_json=[
+        r"p=mv",
+        r"m_1v_1+m_2v_2=m_1v_1'+m_2v_2'",
+        r"K=\frac{1}{2}mv^2",
     ],
-    visuals=[
-        {"type": "particle_gas", "container_dims": [5.0, 4.5],
-         "num_particles": 25, "color": "#F1C40F"},
-        {"type": "vector", "start": [0.0, -1.8, 0], "end": [0.0, 1.8, 0],
-         "color": "#E74C3C", "label": "updraft"},
-        {"type": "text", "text": "warm + moist", "pos": [-3.5, -2.0, 0],
-         "color": "#F1C40F", "font_size": 20},
-        {"type": "text", "text": "cold + dry", "pos": [-3.5, 2.0, 0],
-         "color": "#3498DB", "font_size": 20},
+    visual_data_json=[
+        {"type": "momentum_exchange", "id": "collision",
+         "mass1": 2.0, "mass2": 3.0, "v1": 5.0, "v2": -2.0,
+         "color": "#4CC9F0"},
+        {"type": "vector", "id": "p_before",
+         "start": [-6.0, 2.5, 0.0], "end": [-3.0, 2.5, 0.0],
+         "color": "#F1C40F"},
+        {"type": "vector", "id": "p_after",
+         "start": [3.0, -2.5, 0.0], "end": [6.0, -2.5, 0.0],
+         "color": "#F1C40F"},
     ],
-    audio=(
-        "A thunderstorm is not one big cloud. It is made up of many "
-        "smaller cells, each fairly independent. Let me describe one cell. "
-        "The basic mechanism is simple: warm, moist air rises. As it "
-        "rises, it expands. Expansion is adiabatic, so it cools. Now, if "
-        "the air contains water vapor, the cooling is different. As the "
-        "vapor condenses into droplets, it releases heat, so the air does "
-        "not cool as fast. It stays warmer than its surroundings, which "
-        "means it is lighter, which means it keeps rising. This is called "
-        "convective instability, and it is what drives a thunderstorm "
-        "cell. The rising air entrains more air from the sides. The water "
-        "vapor condenses into tiny droplets, and above a certain altitude "
-        "the droplets freeze into ice crystals. This buildup of ice is "
-        "very important, because it is where the electrical effects come "
-        "from. As the ice particles grow, they become heavy enough to "
-        "fall. Now we have an updraft that is still going up, and a "
-        "downdraft that is starting to come down. The whole thing becomes "
-        "a churning storm. It can extend from a few hundred meters above "
-        "the ground up to ten or fifteen thousand meters, and the updraft "
-        "can be going at sixty miles an hour. That is the anatomy of a "
-        "thunderstorm cell. In the next part, we will see how it "
-        "generates a hundred million volts between its top and its "
-        "bottom."
+    audio_script=(
+        "Momentum is the product of mass and velocity. It is a vector, and it "
+        "points in the same direction as the velocity. The total momentum of "
+        "an isolated system, one that experiences no net external force, is "
+        "conserved. This is one of the most powerful conservation laws in "
+        "physics. Consider two carts on a frictionless track. Cart one has "
+        "mass m one and velocity v one. Cart two has mass m two and velocity "
+        "v two. They collide, and after the collision their velocities are v "
+        "one prime and v two prime. The law of conservation of momentum says "
+        "that the total momentum before the collision equals the total momentum "
+        "after the collision. In symbols, m one v one plus m two v two equals m "
+        "one v one prime plus m two v two prime. Notice that momentum is a "
+        "vector equation. It applies separately in each direction. In a one "
+        "dimensional collision, it reduces to a single scalar equation. The "
+        "collision visual shows two carts approaching each other. The yellow "
+        "arrows represent the momentum vectors before the collision. After the "
+        "collision, the carts may have different velocities, but the total "
+        "momentum is the same. In an elastic collision, kinetic energy is also "
+        "conserved. In an inelastic collision, some kinetic energy is converted "
+        "into other forms, such as heat or deformation. But in every case, "
+        "momentum is conserved as long as no net external force acts on the "
+        "system. Momentum conservation is a consequence of Newton's third law. "
+        "During the collision, the force that cart one exerts on cart two is "
+        "equal and opposite to the force that cart two exerts on cart one. "
+        "These equal and opposite forces act for the same time, so the impulses "
+        "they deliver are equal and opposite. The change in momentum of cart "
+        "one is the negative of the change in momentum of cart two. The total "
+        "momentum is unchanged. This is why momentum conservation is so "
+        "robust. It does not depend on the details of the force between the "
+        "carts during the collision."
     ),
-))
+    orientation="horizontal",
+    beats_json=[
+        {"type": "hook", "focus": "collision"},
+        {"type": "law", "focus": "p_before", "transition": "wipe"},
+        {"type": "punchline", "focus": "p_after"},
+    ],
+    target_duration_sec=180,
+)
 
-# ============================================================ 04
-ROWS.append(row(
-    video_id="feynman_v2_day5_04_charge_separation",
+# A4. Simple Harmonic Motion
+add(
+    video_id="lecture_shm_pendulum",
     concept_type="GENERIC",
-    header_title="How a Cloud Builds 100 Million Volts",
-    tagline="The mystery of charge separation",
-    equations=[
-        r"V_{\text{cloud-ground}} \sim 10^8\ \text{V}",
-        r"Q_{\text{stroke}} \sim 20\ \text{C}",
-        r"\text{Wilson: induced dipole on falling drop}",
+    header_title="Oscillations Measure Time",
+    tagline="Period depends on length and gravity, not on mass",
+    question_text="How does pendulum length set its period and frequency?",
+    equations_json=[
+        r"T=2\pi\sqrt{\frac{L}{g}}",
+        r"f=\frac{1}{T}",
+        r"\omega=2\pi f",
+        r"x(t)=A\cos(\omega t+\delta)",
     ],
-    visuals=[
-        {"type": "charge", "pos": [0.0, 2.5, 0], "color": "#FF4B4B",
-         "radius": 0.18, "label": "+"},
-        {"type": "charge", "pos": [0.0, -2.5, 0], "color": "#3498DB",
-         "radius": 0.18, "label": "-"},
-        {"type": "line", "start": [-3.5, 0.5, 0], "end": [3.5, 0.5, 0],
-         "color": "#8A8F9C", "dashed": True},
-        {"type": "text", "text": "10^8 V", "pos": [2.0, 0.5, 0],
-         "color": "#F1C40F", "font_size": 22},
+    visual_data_json=[
+        {"type": "pendulum", "id": "pendulum",
+         "length": 2.0, "gravity": 9.8, "angle": 20.0,
+         "color": "#4CC9F0"},
+        {"type": "calculus_graph", "id": "shm_curve",
+         "expression": "cos(2*pi*x/3)",
+         "x_range": [0.0, 6.0], "y_range": [-1.5, 1.5],
+         "x_length": 5.0, "y_length": 2.0,
+         "center": [0.0, -3.0, 0.0]},
     ],
-    audio=(
-        "The charge at the bottom of a thundercloud is large enough to "
-        "produce potential differences of twenty, thirty, even a hundred "
-        "million volts between the cloud and the earth. That is far bigger "
-        "than the four hundred thousand volts we found from the sky to the "
-        "ground in a clear atmosphere. Where does all this charge come "
-        "from? The mechanism is still not fully understood, but we have a "
-        "good theory. In nineteen twenty-nine, C. T. R. Wilson proposed "
-        "the following. The earth's fair weather field points downward, "
-        "from positive sky to negative ground. A falling water or ice "
-        "droplet in that field develops an induced dipole moment: the "
-        "bottom becomes positive, the top negative. Now the air contains "
-        "slow-moving large ions. Positive ions are repelled by the "
-        "positive bottom of the drop and pushed away. Negative ions are "
-        "attracted and captured. So the drop acquires a net negative "
-        "charge as it falls, while leaving positive ions behind. Since the "
-        "drops fall and the positive ions get carried up by the updraft, "
-        "the cloud separates charge: negative at the bottom, positive at "
-        "the top. This is Wilson's theory, and it explains the sign "
-        "correctly. It also explains why thunderstorms pump negative "
-        "charge down to the earth, keeping the earth charged even though "
-        "fair weather is always discharging it. But the total charge "
-        "involved is enormous, and there are still mysteries about how "
-        "the mechanism sustains itself. Thunderstorm electrification "
-        "remains one of the great unsolved problems in atmospheric "
-        "physics."
+    audio_script=(
+        "Simple harmonic motion is the back and forth motion of an object under "
+        "a restoring force proportional to its displacement. A pendulum is the "
+        "classic example. When the bob is displaced from equilibrium and "
+        "released, it swings back and forth. For small angles, the restoring "
+        "force is proportional to the displacement, and the motion is simple "
+        "harmonic. The period of a simple pendulum, the time for one complete "
+        "cycle, is given by T equals two pi times the square root of L over g. "
+        "Here L is the length of the pendulum and g is the acceleration due to "
+        "gravity. Notice that the period does not depend on the mass of the "
+        "bob. It depends only on the length and on g. This is a remarkable "
+        "fact. A heavy bob and a light bob on strings of the same length swing "
+        "with the same period. The frequency is the inverse of the period, f "
+        "equals one over T. The angular frequency is omega equals two pi f. "
+        "The position of the bob as a function of time is described by a cosine "
+        "function, x of t equals A cosine omega t plus delta. Here A is the "
+        "amplitude, the maximum displacement from equilibrium, and delta is the "
+        "phase constant, which depends on the initial conditions. The graph "
+        "shows the cosine curve. Notice that the motion repeats every period T. "
+        "The period is independent of the amplitude for small angles, a "
+        "property called isochronism. Galileo discovered this property by "
+        "timing the swings of a chandelier. It is the basis of pendulum "
+        "clocks. If you shorten the pendulum, the period decreases. If you "
+        "lengthen it, the period increases. A pendulum of length one meter has "
+        "a period of about two seconds. This is why grandfather clocks use "
+        "pendulums of about one meter."
     ),
-))
+    orientation="horizontal",
+    beats_json=[
+        {"type": "hook", "focus": "pendulum"},
+        {"type": "law", "focus": "shm_curve", "transition": "wipe"},
+        {"type": "punchline", "focus": "pendulum"},
+    ],
+    target_duration_sec=180,
+)
 
-# ============================================================ 05
-ROWS.append(row(
-    video_id="feynman_v2_day5_05_lightning",
+# A5. Wave Properties
+add(
+    video_id="lecture_wave_properties",
     concept_type="GENERIC",
-    header_title="How Lightning Actually Works",
-    tagline="Step leaders, return strokes, and the thunderclap",
-    equations=[
-        r"\text{Leader speed} \sim c/6 \approx 5 \times 10^7\ \text{m/s}",
-        r"\text{Return stroke current} \sim 10^4\ \text{A}",
-        r"Q_{\text{transfer}} \approx 20\ \text{C}",
+    header_title="Waves Carry a Pattern",
+    tagline="Speed equals frequency times wavelength",
+    question_text="How are wave speed, frequency, and wavelength related?",
+    equations_json=[
+        r"v=\lambda f",
+        r"v=\frac{\lambda}{T}",
+        r"f=\frac{1}{T}",
+        r"y(x,t)=A\cos(kx-\omega t)",
     ],
-    visuals=[
-        {"type": "line", "start": [0.0, 3.0, 0], "end": [0.0, 1.0, 0],
-         "color": "#3498DB", "stroke_width": 3},
-        {"type": "line", "start": [0.0, 1.0, 0], "end": [0.3, 0.0, 0],
-         "color": "#3498DB", "stroke_width": 3},
-        {"type": "line", "start": [0.3, 0.0, 0], "end": [0.0, -1.5, 0],
-         "color": "#F1C40F", "stroke_width": 3},
-        {"type": "line", "start": [0.0, -1.5, 0], "end": [0.3, -3.0, 0],
-         "color": "#F1C40F", "stroke_width": 3},
-        {"type": "text", "text": "step leader", "pos": [-2.5, 2.0, 0],
-         "color": "#3498DB", "font_size": 20},
-        {"type": "text", "text": "return stroke", "pos": [2.5, -2.0, 0],
-         "color": "#F1C40F", "font_size": 20},
+    visual_data_json=[
+        {"type": "wave", "id": "wave",
+         "amplitude": 1.5, "wavelength": 4.0, "frequency": 1.0,
+         "color": "#4CC9F0"},
+        {"type": "geometry", "id": "lambda_marker", "dimension": 2,
+         "kind": "polyline", "points": [[-2.0, 3.5], [2.0, 3.5]],
+         "color": "#F1C40F"},
     ],
-    audio=(
-        "The first photographs of lightning were taken with a camera that "
-        "was moved back and forth while the shutter was open. They showed "
-        "something surprising: a lightning stroke is not one single "
-        "discharge. It is a series of them, along the same path. Later, a "
-        "camera with two lenses on a rapidly rotating disc, called a Boys "
-        "camera, made the timing clear. Here is what happens. It all "
-        "starts with a step leader. The bottom of the cloud is strongly "
-        "negative. Electrons accelerate downward, ionizing the air as they "
-        "go. But they do not go smoothly. The leader moves in steps of "
-        "about fifty meters, pausing for about fifty microseconds between "
-        "each step. It moves at roughly a sixth of the speed of light. The "
-        "leader leaves behind a column of ionized air, a conducting "
-        "channel from the cloud down toward the ground. When the leader "
-        "finally touches the ground, the negative charge at the bottom of "
-        "the cloud can finally escape. Electrons dump out of the cloud, "
-        "rushing down the conducting channel. This is the return stroke, "
-        "which is what we actually see as the bright flash of lightning. "
-        "The current in the return stroke can be ten thousand amperes, "
-        "and it carries down about twenty coulombs of charge. A few "
-        "hundredths of a second later, if the cloud has more charge "
-        "available, another leader comes down along the same ionized "
-        "path, and there is another return stroke. So lightning strikes "
-        "the same path many times in rapid succession, and that flickering "
-        "is what we see."
+    audio_script=(
+        "A wave is a disturbance that travels through space, carrying energy "
+        "and momentum without transporting matter. The key parameters of a "
+        "periodic wave are its wavelength, frequency, and speed. The "
+        "wavelength, lambda, is the distance between successive crests. The "
+        "frequency, f, is the number of crests that pass a given point per "
+        "second. The period, T, is the time for one complete wave to pass, so "
+        "f equals one over T. The speed of the wave, v, is the distance the "
+        "wave travels per unit time. These three quantities are related by the "
+        "fundamental wave equation: v equals lambda times f. This equation is "
+        "simple but powerful. It says that if the frequency is fixed by the "
+        "source, then the wavelength must adjust so that the product equals the "
+        "wave speed. Since the wave speed is determined by the medium, a "
+        "change in frequency causes a change in wavelength. The wave visual "
+        "shows a sinusoidal wave traveling to the right. The amplitude is the "
+        "maximum displacement from equilibrium. The wavelength is marked by "
+        "the yellow bar. The wave carries energy from left to right. The "
+        "particles of the medium, however, oscillate up and down about their "
+        "equilibrium positions. They do not travel with the wave. For a wave "
+        "on a string, the speed is determined by the tension F and the mass per "
+        "unit length mu: v equals the square root of F over mu. A tighter "
+        "string or a lighter string produces a faster wave. For sound waves in "
+        "air, the speed depends on the temperature. At room temperature, it is "
+        "about 343 meters per second. For light waves in vacuum, the speed is "
+        "the same for all frequencies: about three times ten to the eighth "
+        "meters per second. The wave equation is one of the most important "
+        "equations in physics."
     ),
-))
+    orientation="horizontal",
+    beats_json=[
+        {"type": "hook", "focus": "wave"},
+        {"type": "law", "focus": "lambda_marker", "transition": "wipe"},
+        {"type": "punchline", "focus": "wave"},
+    ],
+    target_duration_sec=180,
+)
 
-# ============================================================ 06
-ROWS.append(row(
-    video_id="feynman_v2_day5_06_dielectric_constant",
+# A6. Fluid Dynamics and Bernoulli
+add(
+    video_id="lecture_fluid_bernoulli",
     concept_type="GENERIC",
-    header_title="What Faraday Discovered in Insulators",
-    tagline="Why a capacitor holds more charge with glass between its plates",
-    equations=[
-        r"C = \frac{\epsilon_0 A}{d} \;\rightarrow\; C = \frac{\kappa \epsilon_0 A}{d}",
-        r"\kappa = \text{dielectric constant}",
+    header_title="Fluids Conserve Energy",
+    tagline="Faster flow means lower pressure",
+    question_text="How does Bernoulli's equation relate pressure, speed, and height?",
+    equations_json=[
+        r"p+\frac{1}{2}\rho v^2+\rho g h=\text{constant}",
+        r"A_1v_1=A_2v_2",
+        r"p_1+\frac{1}{2}\rho v_1^2=p_2+\frac{1}{2}\rho v_2^2",
     ],
-    visuals=[
-        {"type": "line", "start": [-3.5, 1.5, 0], "end": [3.5, 1.5, 0],
-         "color": "#FF4B4B", "stroke_width": 4},
-        {"type": "line", "start": [-3.5, -1.5, 0], "end": [3.5, -1.5, 0],
-         "color": "#3498DB", "stroke_width": 4},
-        {"type": "shape", "kind": "rectangle", "pos": [0, 0, 0],
-         "dims": [6.5, 2.5], "color": "#F1C40F", "fill_opacity": 0.15},
-        {"type": "text", "text": "dielectric", "pos": [0, 0, 0],
-         "color": "#F1C40F", "font_size": 22},
-        {"type": "text", "text": "C = \\kappa \\epsilon_0 A / d",
-         "pos": [0, -3.0, 0], "color": "#2ECC71", "font_size": 22},
+    visual_data_json=[
+        {"type": "fluid_dynamics", "id": "venturi",
+         "operation": "venturi", "color": "#4CC9F0"},
+        {"type": "geometry", "id": "flow_arrow", "dimension": 2,
+         "kind": "polyline", "points": [[-6.5, 0.0], [-4.5, 0.0]],
+         "color": "#F1C40F"},
     ],
-    audio=(
-        "In the eighteen thirties, Faraday did a simple experiment. He "
-        "took a parallel-plate capacitor, charged it up, and measured the "
-        "voltage. Then he slid a slab of glass between the plates. He "
-        "found that the voltage went down. Since the charge on the plates "
-        "was fixed, a lower voltage meant a higher capacitance. So the "
-        "glass had increased the capacitance by some factor. That factor "
-        "is called the dielectric constant, and it depends only on the "
-        "material. For vacuum, it is exactly one. For air, it is about one "
-        "point zero zero zero six. For glass, it is about five. For water, "
-        "it is eighty. Now the surprising thing is that an insulator, "
-        "which is by definition a material that does not conduct, has such "
-        "a strong effect on the field. How can that be? The answer is "
-        "polarization. In an insulator, the electrons are bound to "
-        "individual atoms. But they can still shift a tiny bit within the "
-        "atom. So when you apply an electric field, the positive nucleus "
-        "gets pulled one way and the negative electrons the other way. The "
-        "atoms become little dipoles, all aligned with the field. This "
-        "collective alignment creates an internal electric field that "
-        "opposes the applied field. So the net field inside the dielectric "
-        "is weaker than it would be in vacuum. The capacitor voltages drop, "
-        "and the capacitance rises. That is Faraday's observation "
-        "explained. It is the beginning of our understanding of how matter "
-        "responds to electric fields."
+    audio_script=(
+        "Bernoulli's equation is the statement of energy conservation for a "
+        "flowing fluid. It says that the sum of the pressure, the kinetic "
+        "energy density, and the gravitational potential energy density is "
+        "constant along a streamline. In symbols, p plus one half rho v "
+        "squared plus rho g h equals a constant. Here p is the pressure, rho "
+        "is the density, v is the flow speed, and h is the height. This "
+        "equation tells us that where the fluid flows faster, the pressure is "
+        "lower. This is often counterintuitive, because we expect faster flow "
+        "to mean higher pressure. But energy conservation demands the "
+        "opposite. Consider a fluid flowing through a horizontal pipe with a "
+        "constriction. The continuity equation, A one v one equals A two v "
+        "two, tells us that the fluid must speed up as it passes through the "
+        "narrower section. According to Bernoulli's equation, the pressure "
+        "must decrease in the narrower section to keep the sum constant. The "
+        "venturi visual shows this effect. The streamlines are closer together "
+        "in the constriction, indicating faster flow. The pressure is lower "
+        "there, which is why the fluid is drawn upward in the vertical tubes. "
+        "Bernoulli's equation explains many everyday phenomena. It explains "
+        "why a curveball curves. It explains why a shower curtain is pulled "
+        "inward when you turn on the water. It explains why an airplane wing "
+        "generates lift. The air flows faster over the curved top of the wing, "
+        "so the pressure is lower there, and the higher pressure underneath "
+        "pushes the wing upward. Bernoulli's equation also explains how a "
+        "carburetor works, how a perfume atomizer works, and how a chimney "
+        "draws smoke upward. Keep in mind that Bernoulli's equation applies "
+        "only to steady, incompressible, nonviscous flow along a streamline."
     ),
-))
+    orientation="horizontal",
+    beats_json=[
+        {"type": "hook", "focus": "venturi"},
+        {"type": "law", "focus": "flow_arrow", "transition": "wipe"},
+        {"type": "punchline", "focus": "venturi"},
+    ],
+    target_duration_sec=180,
+)
 
-# ============================================================ 07
-ROWS.append(row(
-    video_id="feynman_v2_day5_07_polarization_charges",
+# A7. Electric Field
+add(
+    video_id="lecture_electric_field",
     concept_type="GENERIC",
-    header_title="Bound Charges in a Dielectric",
-    tagline="Where polarization charges come from",
-    equations=[
-        r"\sigma_{\text{pol}} = P",
-        r"\rho_{\text{pol}} = -\nabla \cdot \mathbf{P}",
-        r"E = \frac{\sigma_{\text{free}} - P}{\epsilon_0}",
+    header_title="Charges Create Fields",
+    tagline="The electric field is force per unit charge",
+    question_text="How does a point charge produce an electric field?",
+    equations_json=[
+        r"E=\frac{F}{q}",
+        r"E=\frac{1}{4\pi\epsilon_0}\frac{Q}{r^2}",
+        r"F=qE",
     ],
-    visuals=[
-        {"type": "shape", "kind": "rectangle", "pos": [0, 0, 0],
-         "dims": [5.5, 2.5], "color": "#F1C40F", "fill_opacity": 0.15},
-        {"type": "charge", "pos": [-2.9, 0.5, 0], "color": "#FF4B4B",
-         "radius": 0.12},
-        {"type": "charge", "pos": [2.9, 0.5, 0], "color": "#3498DB",
-         "radius": 0.12},
-        {"type": "vector", "start": [0.0, 0.0, 0], "end": [0.0, 1.0, 0],
-         "color": "#2ECC71", "label": "P"},
-        {"type": "text", "text": "\\sigma_{pol} = P",
-         "pos": [0, -2.2, 0], "color": "#2ECC71", "font_size": 22},
+    visual_data_json=[
+        {"type": "electric_field", "id": "field", "q": 1.0,
+         "position": [0.0, 0.0], "color": "#4CC9F0"},
+        {"type": "vector", "id": "E_vec",
+         "start": [4.0, 0.0, 0.0], "end": [6.0, 0.0, 0.0],
+         "color": "#F1C40F"},
     ],
-    audio=(
-        "When a dielectric slab is placed in a uniform electric field, all "
-        "the little atomic dipoles align with the field. Inside the "
-        "material, adjacent dipoles cancel each other out: the positive "
-        "end of one meets the negative end of the next. So there is no net "
-        "charge in the interior. But at the surfaces, something different "
-        "happens. On one face, all the dipoles stick out their negative "
-        "ends. On the other face, all the dipoles stick out their positive "
-        "ends. So the surfaces acquire a sheet of bound charge. This is "
-        "not free charge like the charge on a conductor. It is stuck to "
-        "the atoms. But it still contributes to the electric field. We "
-        "call it the polarization charge, and we write it as sigma pol. It "
-        "turns out that the surface density of polarization charge is "
-        "exactly equal to the magnitude of the polarization vector P. The "
-        "polarization P is the dipole moment per unit volume. Now, "
-        "combining this polarization charge with the free charge on the "
-        "capacitor plates, we get the net field inside the dielectric. It "
-        "is E equals sigma free minus P, all divided by epsilon zero. Since "
-        "P points in the same direction as the field, it reduces the field. "
-        "This is why the field inside a dielectric is smaller than the "
-        "field in vacuum. The polarization charges are the microscopic "
-        "explanation of Faraday's observation."
+    audio_script=(
+        "The electric field is a way of describing the influence that a charge "
+        "exerts on the space around it. Instead of saying that a charge Q "
+        "exerts a force directly on another charge q at a distance, we say that "
+        "the charge Q creates an electric field in the space around it, and "
+        "this field exerts a force on the charge q. The electric field is "
+        "defined as the electric force per unit charge. In symbols, E equals F "
+        "over q. The direction of the electric field is the direction of the "
+        "force that a positive test charge would experience. The magnitude of "
+        "the electric field produced by a point charge Q at a distance r is "
+        "given by Coulomb's law divided by q: E equals one over four pi epsilon "
+        "zero times Q over r squared. The constant epsilon zero is the "
+        "permittivity of free space. The electric field of a positive charge "
+        "points radially outward, and the field of a negative charge points "
+        "radially inward. The electric field is a vector field. It has a "
+        "magnitude and a direction at every point in space. The force on a "
+        "charge q placed in an electric field E is simply q times E. If q is "
+        "positive, the force is in the same direction as the field. If q is "
+        "negative, the force is opposite to the field. The electric field "
+        "visual shows the field lines emerging from a positive point charge. "
+        "The lines are closer together near the charge, where the field is "
+        "stronger, and farther apart far away, where the field is weaker. The "
+        "field follows an inverse square law. If you double the distance from "
+        "the charge, the field strength drops by a factor of four. The electric "
+        "field concept is essential for understanding everything from atomic "
+        "structure to electrical circuits to electromagnetic waves."
     ),
-))
+    orientation="horizontal",
+    beats_json=[
+        {"type": "hook", "focus": "field"},
+        {"type": "law", "focus": "E_vec", "transition": "wipe"},
+        {"type": "punchline", "focus": "field"},
+    ],
+    target_duration_sec=180,
+)
 
-# ============================================================ 08
-ROWS.append(row(
-    video_id="feynman_v2_day5_08_d_field",
+# A8. Work-Energy Theorem
+add(
+    video_id="lecture_work_energy",
     concept_type="GENERIC",
-    header_title="The D Field and Gauss's Law",
-    tagline="Why we invent a new vector to simplify dielectric problems",
-    equations=[
-        r"\mathbf{D} = \epsilon_0 \mathbf{E} + \mathbf{P}",
-        r"\nabla \cdot \mathbf{D} = \rho_{\text{free}}",
-        r"\mathbf{D} = \kappa \epsilon_0 \mathbf{E}",
+    header_title="Work Changes Kinetic Energy",
+    tagline="The net work equals the change in kinetic energy",
+    question_text="How is work done by a force related to kinetic energy?",
+    equations_json=[
+        r"W=\int_a^b F\,dx",
+        r"W_{net}=\Delta K=\tfrac{1}{2}mv_f^2-\tfrac{1}{2}mv_i^2",
+        r"K=\tfrac{1}{2}mv^2",
     ],
-    visuals=[
-        {"type": "shape", "kind": "rectangle", "pos": [0, 0, 0],
-         "dims": [5.5, 2.5], "color": "#F1C40F", "fill_opacity": 0.15},
-        {"type": "text", "text": "D = \\epsilon_0 E + P",
-         "pos": [0, 1.5, 0], "color": "#F1C40F", "font_size": 22},
-        {"type": "text", "text": "\\nabla \\cdot D = \\rho_{free}",
-         "pos": [0, -1.5, 0], "color": "#2ECC71", "font_size": 22},
-        {"type": "field", "direction": "RIGHT", "rows": 3, "opacity": 0.30,
-         "color": "#3498DB"},
+    visual_data_json=[
+        {"type": "calculus_graph", "id": "force_curve",
+         "expression": "2*x+1",
+         "x_range": [0.0, 3.0], "y_range": [0.0, 8.0],
+         "x_length": 5.0, "y_length": 3.0,
+         "center": [0.0, 0.0, 0.0]},
+        {"type": "integral_area", "id": "work_area",
+         "expression": "2*x+1", "x_range": [1.0, 3.0],
+         "color": "#4CC9F0"},
     ],
-    audio=(
-        "The problem with dielectrics is that we usually do not know where "
-        "the polarization charges are. They depend on the field, which "
-        "depends on the charges, which depend on the field. It is a "
-        "self-consistent problem. To make life simpler, we introduce a "
-        "new vector field, D, defined as D equals epsilon zero E plus P. "
-        "The great advantage of D is that its divergence depends only on "
-        "the free charges, the ones we put on the capacitor plates. All "
-        "the messy polarization charge is hidden inside D. So Gauss's law "
-        "in dielectrics takes a beautifully simple form: the divergence of "
-        "D equals the free charge density. To solve a problem in a "
-        "dielectric, we then need one more piece of information: the "
-        "relation between D and E. For most materials, this relation is "
-        "linear: D equals kappa epsilon zero times E, where kappa is the "
-        "dielectric constant. This is a very useful approximation, but it "
-        "is only an approximation. It breaks down at high fields, it "
-        "breaks down for ferroelectric materials like barium titanate, and "
-        "it breaks down when the frequency of the applied field becomes "
-        "comparable to atomic transition frequencies. So we should always "
-        "treat it as a model, not a fundamental law. The fundamental laws "
-        "are Maxwell's equations, and they are always true. The relation "
-        "between D and E is a property of matter. It is a very useful "
-        "property, but it is not fundamental. That distinction is "
-        "important."
+    audio_script=(
+        "The work energy theorem is a bridge between force and energy. It says "
+        "that the net work done on an object equals the change in its kinetic "
+        "energy. Work is defined as the integral of force over displacement. "
+        "For a constant force, W equals F d cosine theta, where theta is the "
+        "angle between the force and the displacement. For a variable force, W "
+        "equals the integral of F d x. The work is the area under the force "
+        "versus position curve. The kinetic energy of an object is one half m v "
+        "squared. The work energy theorem says that if you do positive work on "
+        "an object, its kinetic energy increases. If you do negative work, its "
+        "kinetic energy decreases. The visual shows a force that increases with "
+        "position. The shaded area under the curve is the work done by the "
+        "force. The work energy theorem is a consequence of Newton's second "
+        "law. If we start with F equals m a and integrate both sides with "
+        "respect to position, we obtain the work energy theorem. This is a "
+        "powerful result because it allows us to calculate changes in speed "
+        "without knowing the details of the motion. We only need to know the "
+        "initial and final speeds and the work done by the net force. The work "
+        "energy theorem applies to all forces, conservative and "
+        "nonconservative. For conservative forces, we can also define potential "
+        "energy, and the sum of kinetic and potential energy is conserved. For "
+        "nonconservative forces, such as friction, the work done is negative, "
+        "and mechanical energy is dissipated as heat. The work energy theorem "
+        "is one of the most useful tools in mechanics. It is used to analyze "
+        "everything from the motion of a car to the motion of an electron in an "
+        "electric field."
     ),
-))
+    orientation="horizontal",
+    beats_json=[
+        {"type": "hook", "focus": "force_curve"},
+        {"type": "law", "focus": "work_area", "transition": "wipe"},
+        {"type": "punchline", "focus": "force_curve"},
+    ],
+    target_duration_sec=180,
+)
 
-# ============================================================ 09 PYQ
-ROWS.append(row(
-    video_id="feynman_v2_day5_pyq_01_dielectric_cap",
+# A9. Projectile Motion
+add(
+    video_id="lecture_projectile_motion",
+    concept_type="GENERIC",
+    header_title="Projectiles Curve",
+    tagline="Horizontal and vertical motions are independent",
+    question_text="How do horizontal motion and gravity combine in a projectile path?",
+    equations_json=[
+        r"x=v_{0x}t",
+        r"y=v_{0y}t-\tfrac{1}{2}gt^2",
+        r"v_y=v_{0y}-gt",
+        r"R=\frac{v_0^2\sin 2\theta}{g}",
+    ],
+    visual_data_json=[
+        {"type": "projectile_motion", "id": "path",
+         "v0": 10.0, "angle": 35.0, "g": 9.8,
+         "color": "#4CC9F0"},
+        {"type": "vector", "id": "launch_vel",
+         "start": [-6.0, -3.0, 0.0], "end": [-4.0, -1.0, 0.0],
+         "color": "#F1C40F"},
+    ],
+    audio_script=(
+        "Projectile motion is the motion of an object launched into the air and "
+        "moving under the influence of gravity alone. The key insight is that "
+        "horizontal and vertical motions are independent. Gravity acts only in "
+        "the vertical direction. It does not affect the horizontal motion. So "
+        "the horizontal velocity remains constant, and the horizontal position "
+        "is x equals v zero x t. The vertical motion is uniformly accelerated, "
+        "with acceleration g downward. The vertical position is y equals v "
+        "zero y t minus one half g t squared. The vertical velocity is v y "
+        "equals v zero y minus g t. The combination of constant horizontal "
+        "velocity and constant vertical acceleration produces a parabolic "
+        "path. The projectile visual shows the trajectory of a launched object. "
+        "The horizontal motion is uniform. The vertical motion is accelerated. "
+        "The velocity vector at any point is tangent to the path. The "
+        "horizontal component of the velocity is constant. The vertical "
+        "component changes. At the highest point of the trajectory, the "
+        "vertical component of the velocity is zero. The projectile then "
+        "begins to descend. The range of a projectile on level ground is R "
+        "equals v zero squared sine two theta over g. The maximum range occurs "
+        "for a launch angle of 45 degrees. The maximum height is h equals v "
+        "zero squared sine squared theta over two g. The time of flight is t "
+        "equals two v zero sine theta over g. These formulas assume no air "
+        "resistance. In reality, air resistance reduces the range and changes "
+        "the shape of the trajectory. But for many everyday projectiles, such "
+        "as a baseball or a golf ball, the parabolic approximation is "
+        "reasonably accurate."
+    ),
+    orientation="horizontal",
+    beats_json=[
+        {"type": "hook", "focus": "path"},
+        {"type": "law", "focus": "launch_vel", "transition": "wipe"},
+        {"type": "punchline", "focus": "path"},
+    ],
+    target_duration_sec=180,
+)
+
+# A10. Rotational Motion
+add(
+    video_id="lecture_rotational_motion",
+    concept_type="GENERIC",
+    header_title="Rotation Has Inertia",
+    tagline="Moment of inertia determines resistance to angular acceleration",
+    question_text="How does moment of inertia affect rotational motion?",
+    equations_json=[
+        r"\tau=I\alpha",
+        r"I=\sum m_i r_i^2",
+        r"K=\tfrac{1}{2}I\omega^2",
+        r"L=I\omega",
+    ],
+    visual_data_json=[
+        {"type": "rotational_motion", "id": "rotation",
+         "shape": "solid_disk", "mass": 2.0, "radius": 2.5,
+         "angular_velocity": 2.0, "torque": 0.0,
+         "color": "#4CC9F0"},
+        {"type": "geometry", "id": "torque_arrow", "dimension": 2,
+         "kind": "polyline", "points": [[2.5, 0.0], [4.0, 0.0]],
+         "color": "#F1C40F"},
+    ],
+    audio_script=(
+        "Rotational motion is the motion of an object spinning about an axis. "
+        "The rotational analogue of force is torque. The rotational analogue "
+        "of mass is moment of inertia. The rotational analogue of Newton's "
+        "second law is tau equals I alpha, where tau is the torque, I is the "
+        "moment of inertia, and alpha is the angular acceleration. The moment "
+        "of inertia depends not only on the mass of the object but also on how "
+        "that mass is distributed relative to the axis of rotation. For a "
+        "collection of point masses, I equals the sum of m i r i squared. The "
+        "farther the mass is from the axis, the larger the moment of inertia. "
+        "This is why a hoop has a larger moment of inertia than a disk of the "
+        "same mass and radius. All the mass of the hoop is at the rim, while "
+        "the mass of the disk is distributed throughout. The rotational "
+        "kinetic energy is K equals one half I omega squared. The angular "
+        "momentum is L equals I omega. Angular momentum is conserved when the "
+        "net external torque is zero. The rotation visual shows a spinning "
+        "object. The torque arrow represents the twisting force that causes "
+        "angular acceleration. If the moment of inertia is large, a large "
+        "torque is needed to produce a given angular acceleration. This is why "
+        "a figure skater spins faster when she pulls her arms in. By reducing "
+        "her moment of inertia, she reduces the resistance to rotation, and "
+        "since angular momentum is conserved, her angular velocity increases. "
+        "The same principle explains why a diver tucks to complete more "
+        "somersaults, and why a cat can land on its feet. Rotational motion is "
+        "everywhere in nature, from the spinning of galaxies to the rotation of "
+        "electrons in atoms."
+    ),
+    orientation="horizontal",
+    beats_json=[
+        {"type": "hook", "focus": "rotation"},
+        {"type": "law", "focus": "torque_arrow", "transition": "wipe"},
+        {"type": "punchline", "focus": "rotation"},
+    ],
+    target_duration_sec=180,
+)
+
+
+# =====================================================================
+# SECTION B — 10 VERTICAL 1-MINUTE PYQ SHORTS
+# orientation="vertical", target_duration_sec=60, concept_type=PYQ
+# Frame: x in [-4.5, 4.5], y in [-8, 8]
+# =====================================================================
+
+# B1. Newton's Second Law — falling acceleration
+add(
+    video_id="short_newton_fall",
     concept_type="PYQ",
-    header_title="Capacitor with a Dielectric",
-    tagline="PYQ - plug in and compute",
-    question_text=(
-        "A parallel-plate capacitor has plate area 0.01 m^2 and plate "
-        "separation 2 mm. A dielectric slab of kappa = 5 fills the space "
-        "between the plates. What is the capacitance? "
-        "Use epsilon_0 = 8.85e-12 F/m."
-    ),
-    options=["(A) 44 pF", "(B) 88 pF", "(C) 221 pF", "(D) 442 pF"],
-    correct="Correct Answer: (C) 221 pF",
-    equations=[
-        r"C = \frac{\kappa \epsilon_0 A}{d}",
-        r"C = \frac{5 \times 8.85 \times 10^{-12} \times 0.01}{2 \times 10^{-3}}",
-        r"C = 2.21 \times 10^{-10}\ \text{F} = 221\ \text{pF}",
+    header_title="Find the Acceleration",
+    tagline="Apply F = ma to a falling object",
+    question_text=("A 5 kg object is released from rest and falls freely near "
+                   "Earth's surface. What is its acceleration?"),
+    option_a="9.8 m/s^2",
+    option_b="5.0 m/s^2",
+    option_c="49 m/s^2",
+    option_d="0 m/s^2",
+    correct_answer="A",
+    equations_json=[
+        r"F_{net}=ma",
+        r"a=\frac{F_{net}}{m}",
+        r"a=g=9.8\ \text{m/s}^2",
     ],
-    visuals=[
-        {"type": "line", "start": [-3.5, 1.5, 0], "end": [3.5, 1.5, 0],
-         "color": "#FF4B4B", "stroke_width": 4},
-        {"type": "line", "start": [-3.5, -1.5, 0], "end": [3.5, -1.5, 0],
-         "color": "#3498DB", "stroke_width": 4},
-        {"type": "shape", "kind": "rectangle", "pos": [0, 0, 0],
-         "dims": [6.5, 2.5], "color": "#F1C40F", "fill_opacity": 0.15},
-        {"type": "text", "text": "\\kappa = 5", "pos": [0, 0, 0],
-         "color": "#F1C40F", "font_size": 22},
-        {"type": "text", "text": "C = 221 pF", "pos": [0, -3.0, 0],
-         "color": "#2ECC71", "font_size": 22},
+    visual_data_json=[
+        {"type": "falling_energy", "id": "fall",
+         "mass": 5.0, "height": 6.0, "g": 9.8,
+         "color": "#4CC9F0"},
     ],
-    audio=(
-        "A parallel-plate capacitor has plate area zero point zero one "
-        "meters squared and plate separation two millimeters. A dielectric "
-        "slab with dielectric constant kappa equals five fills the space "
-        "between the plates. What is the capacitance? Use epsilon zero "
-        "equals eight point eight five times ten to the minus twelve. The "
-        "formula is C equals kappa epsilon zero A over d. Substituting: "
-        "kappa is five, epsilon zero is eight point eight five times ten "
-        "to the minus twelve, area is zero point zero one, and separation "
-        "is two times ten to the minus three. Multiplying: five times "
-        "eight point eight five times ten to the minus twelve equals four "
-        "point four two five times ten to the minus eleven. Times zero "
-        "point zero one equals four point four two five times ten to the "
-        "minus thirteen. Divided by two times ten to the minus three gives "
-        "two point two one times ten to the minus ten farads. That is two "
-        "hundred and twenty one picofarads. Option C. Notice how the "
-        "dielectric boosted the capacitance by a factor of five. Without "
-        "the dielectric, the capacitance would have been forty four "
-        "picofarads. With the dielectric, it is five times larger. This is "
-        "one of the key practical reasons we use dielectrics: to make "
-        "compact, high-capacitance capacitors for electronics. Radio, "
-        "audio equipment, computers—they all depend on this factor of "
-        "kappa."
+    audio_script=(
+        "A five kilogram object is released from rest and falls freely near "
+        "the Earth's surface. What is its acceleration? The only force acting "
+        "on the object is gravity, so the net force is its weight, m g. "
+        "Newton's second law tells us that the acceleration is the net force "
+        "divided by the mass. The mass cancels, and we are left with g, which "
+        "is approximately nine point eight meters per second squared. The "
+        "correct answer is A. Notice that the mass did not matter. Any object "
+        "in free fall near the Earth's surface accelerates at the same rate, "
+        "regardless of its mass."
     ),
-))
+    orientation="vertical",
+    beats_json=[
+        {"type": "hook", "focus": "fall"},
+        {"type": "example", "focus": "fall", "transition": "wipe"},
+        {"type": "punchline", "focus": "fall"},
+    ],
+    target_duration_sec=60,
+)
 
-# ============================================================ 10 PYQ
-ROWS.append(row(
-    video_id="feynman_v2_day5_pyq_02_field_dielectric",
+# B2. Orbit — Kepler's Third Law
+add(
+    video_id="short_orbit_period",
     concept_type="PYQ",
-    header_title="Field Inside a Dielectric",
-    tagline="PYQ - reducing the field by kappa",
-    question_text=(
-        "A parallel-plate capacitor is charged to a surface charge density "
-        "of 2.0 x 10^-6 C/m^2. A dielectric with kappa = 4 is inserted. "
-        "What is the electric field inside the dielectric? "
-        "Use epsilon_0 = 8.85e-12 F/m."
-    ),
-    options=["(A) 2.26 x 10^5 N/C", "(B) 5.65 x 10^4 N/C",
-             "(C) 1.13 x 10^5 N/C", "(D) 4.52 x 10^5 N/C"],
-    correct="Correct Answer: (B) 5.65 x 10^4 N/C",
-    equations=[
-        r"E_0 = \frac{\sigma_{\text{free}}}{\epsilon_0} = \frac{2.0 \times 10^{-6}}{8.85 \times 10^{-12}} = 2.26 \times 10^5\ \text{N/C}",
-        r"E = \frac{E_0}{\kappa} = \frac{2.26 \times 10^5}{4} = 5.65 \times 10^4\ \text{N/C}",
+    header_title="Find the Orbital Period",
+    tagline="Apply Kepler's third law",
+    question_text=("A satellite orbits Earth at radius r. If the orbital "
+                   "radius were doubled, by what factor would the period "
+                   "change?"),
+    option_a=r"\sqrt{2}",
+    option_b="2",
+    option_c=r"2\sqrt{2}",
+    option_d="4",
+    correct_answer="C",
+    equations_json=[
+        r"T^2=\frac{4\pi^2 r^3}{GM}",
+        r"\frac{T_2}{T_1}=\left(\frac{r_2}{r_1}\right)^{3/2}",
     ],
-    visuals=[
-        {"type": "line", "start": [-3.5, 1.5, 0], "end": [3.5, 1.5, 0],
-         "color": "#FF4B4B", "stroke_width": 4},
-        {"type": "line", "start": [-3.5, -1.5, 0], "end": [3.5, -1.5, 0],
-         "color": "#3498DB", "stroke_width": 4},
-        {"type": "shape", "kind": "rectangle", "pos": [0, 0, 0],
-         "dims": [6.5, 2.5], "color": "#F1C40F", "fill_opacity": 0.15},
-        {"type": "field", "direction": "DOWN", "rows": 3, "opacity": 0.25},
-        {"type": "text", "text": "E = 5.65 \\times 10^4 N/C",
-         "pos": [0, -3.0, 0], "color": "#2ECC71", "font_size": 22},
+    visual_data_json=[
+        {"type": "orbit", "id": "orbit1", "radius": 2.0,
+         "mass": 1.0, "color": "#4CC9F0"},
+        {"type": "orbit", "id": "orbit2", "radius": 4.0,
+         "mass": 1.0, "color": "#F1C40F"},
     ],
-    audio=(
-        "A parallel-plate capacitor is charged to a surface charge density "
-        "of two times ten to the minus six coulombs per meter squared. A "
-        "dielectric with kappa equals four is inserted between the plates. "
-        "What is the electric field inside the dielectric? First we "
-        "compute the field without the dielectric. E zero equals sigma "
-        "free over epsilon zero. Sigma free is two times ten to the minus "
-        "six. Epsilon zero is eight point eight five times ten to the "
-        "minus twelve. Dividing gives two point two six times ten to the "
-        "fifth newtons per coulomb. Now, when we insert the dielectric, "
-        "the field reduces by the factor kappa. So E equals E zero over "
-        "kappa equals two point two six times ten to the fifth, divided by "
-        "four, which equals five point six five times ten to the fourth "
-        "newtons per coulomb. Option B. Let me emphasize what just "
-        "happened. We did not add or remove any free charge. The charge on "
-        "the plates is still two times ten to the minus six per square "
-        "meter. But the field inside the dielectric is four times smaller. "
-        "This is because the polarization of the dielectric creates bound "
-        "charges that partially cancel the field from the free charges. "
-        "The net effect is a reduction by the factor kappa. This is why a "
-        "dielectric can be used to store more charge for a given voltage. "
-        "It reduces the field, so you can push more charge onto the plates "
-        "before the voltage gets too high. This is the fundamental reason "
-        "we fill capacitors with dielectrics in the first place."
+    audio_script=(
+        "Kepler's third law tells us that the square of the orbital period is "
+        "proportional to the cube of the orbital radius. So the period is "
+        "proportional to r to the three halves power. If the radius doubles, "
+        "the period changes by a factor of two to the three halves, which is "
+        "two times the square root of two. The correct answer is C, two root "
+        "two. This is approximately two point eight three."
     ),
-))
+    orientation="vertical",
+    beats_json=[
+        {"type": "hook", "focus": "orbit1"},
+        {"type": "example", "focus": "orbit2", "transition": "wipe"},
+        {"type": "punchline", "focus": "orbit2"},
+    ],
+    target_duration_sec=60,
+)
+
+# B3. Collision — Inelastic
+add(
+    video_id="short_collision",
+    concept_type="PYQ",
+    header_title="Find the Final Velocity",
+    tagline="Use momentum conservation",
+    question_text=("A 2 kg cart moving at 3 m/s collides with a stationary "
+                   "4 kg cart. They stick together. What is their common "
+                   "velocity?"),
+    option_a="1 m/s",
+    option_b="1.5 m/s",
+    option_c="2 m/s",
+    option_d="3 m/s",
+    correct_answer="A",
+    equations_json=[
+        r"m_1v_1+m_2v_2=(m_1+m_2)v'",
+        r"v'=\frac{m_1v_1}{m_1+m_2}",
+    ],
+    visual_data_json=[
+        {"type": "momentum_exchange", "id": "collision",
+         "mass1": 2.0, "mass2": 4.0, "v1": 3.0, "v2": 0.0,
+         "color": "#4CC9F0"},
+    ],
+    audio_script=(
+        "A two kilogram cart moving at three meters per second collides with "
+        "a stationary four kilogram cart. They stick together. What is their "
+        "common velocity? Since the carts stick together, this is a perfectly "
+        "inelastic collision. Momentum is conserved. The initial momentum is "
+        "two kilograms times three meters per second, which is six kilogram "
+        "meters per second. After the collision, the total mass is six "
+        "kilograms. The common velocity is the initial momentum divided by "
+        "the total mass, which is six divided by six, or one meter per "
+        "second. The correct answer is A. Notice that kinetic energy is not "
+        "conserved. The initial kinetic energy is nine joules, and the final "
+        "kinetic energy is three joules."
+    ),
+    orientation="vertical",
+    beats_json=[
+        {"type": "hook", "focus": "collision"},
+        {"type": "example", "focus": "collision", "transition": "wipe"},
+        {"type": "punchline", "focus": "collision"},
+    ],
+    target_duration_sec=60,
+)
+
+# B4. Pendulum Period
+add(
+    video_id="short_pendulum_period",
+    concept_type="PYQ",
+    header_title="Find the Pendulum Period",
+    tagline=r"Apply $T = 2\pi\sqrt{L/g}$",
+    question_text=("A pendulum has a length of 1.0 m. What is its period? "
+                   "(g = 9.8 m/s^2)"),
+    option_a="0.5 s",
+    option_b="1.0 s",
+    option_c="2.0 s",
+    option_d="4.0 s",
+    correct_answer="C",
+    equations_json=[
+        r"T=2\pi\sqrt{\frac{L}{g}}",
+        r"T=2\pi\sqrt{\frac{1.0}{9.8}}\approx 2.0\ \text{s}",
+    ],
+    visual_data_json=[
+        {"type": "pendulum", "id": "pendulum", "length": 1.0,
+         "gravity": 9.8, "angle": 15.0, "color": "#4CC9F0"},
+    ],
+    audio_script=(
+        "A pendulum has a length of one point zero meters. What is its "
+        "period? The period of a simple pendulum is given by T equals two pi "
+        "times the square root of L over g. Plugging in L equals one point "
+        "zero meters and g equals nine point eight meters per second squared, "
+        "we get T equals two pi times the square root of one over nine point "
+        "eight. The square root of one over nine point eight is approximately "
+        "zero point three two. Two pi times zero point three two is "
+        "approximately two point zero seconds. The correct answer is C. "
+        "Notice that the period does not depend on the mass of the bob, or on "
+        "the amplitude, as long as the amplitude is small."
+    ),
+    orientation="vertical",
+    beats_json=[
+        {"type": "hook", "focus": "pendulum"},
+        {"type": "example", "focus": "pendulum", "transition": "wipe"},
+        {"type": "punchline", "focus": "pendulum"},
+    ],
+    target_duration_sec=60,
+)
+
+# B5. Wave Speed
+add(
+    video_id="short_wave_speed",
+    concept_type="PYQ",
+    header_title="Find the Wave Speed",
+    tagline=r"Apply $v = \lambda f$",
+    question_text=("A wave has a wavelength of 2.0 m and a frequency of "
+                   "5.0 Hz. What is its speed?"),
+    option_a="0.4 m/s",
+    option_b="2.5 m/s",
+    option_c="7.0 m/s",
+    option_d="10 m/s",
+    correct_answer="D",
+    equations_json=[
+        r"v=\lambda f",
+        r"v=2.0\ \text{m}\times 5.0\ \text{Hz}=10\ \text{m/s}",
+    ],
+    visual_data_json=[
+        {"type": "wave", "id": "wave",
+         "amplitude": 1.0, "wavelength": 2.0, "frequency": 5.0,
+         "color": "#4CC9F0"},
+    ],
+    audio_script=(
+        "A wave has a wavelength of two point zero meters and a frequency of "
+        "five point zero hertz. What is its speed? The wave equation tells us "
+        "that the speed is the product of the wavelength and the frequency. "
+        "So v equals two point zero meters times five point zero hertz, which "
+        "is ten meters per second. The correct answer is D, ten meters per "
+        "second. This relationship, v equals lambda f, is one of the most "
+        "fundamental in wave physics. It applies to all waves, including "
+        "sound waves, water waves, and light waves."
+    ),
+    orientation="vertical",
+    beats_json=[
+        {"type": "hook", "focus": "wave"},
+        {"type": "example", "focus": "wave", "transition": "wipe"},
+        {"type": "punchline", "focus": "wave"},
+    ],
+    target_duration_sec=60,
+)
+
+# B6. Bernoulli — Flow Speed
+add(
+    video_id="short_bernoulli",
+    concept_type="PYQ",
+    header_title="Find the Flow Speed",
+    tagline="Apply Bernoulli's equation",
+    question_text=("Water flows through a horizontal pipe. At point 1, "
+                   "pressure is 2.0 x 10^5 Pa and speed is 2.0 m/s. At "
+                   "point 2, pressure is 1.5 x 10^5 Pa. What is the speed at "
+                   "point 2? (rho = 1000 kg/m^3)"),
+    option_a="2.0 m/s",
+    option_b="5.0 m/s",
+    option_c="10 m/s",
+    option_d="12 m/s",
+    correct_answer="C",
+    equations_json=[
+        r"p_1+\tfrac{1}{2}\rho v_1^2=p_2+\tfrac{1}{2}\rho v_2^2",
+        r"v_2=\sqrt{v_1^2+\frac{2(p_1-p_2)}{\rho}}",
+        r"v_2=\sqrt{4+100}\approx 10.2\ \text{m/s}",
+    ],
+    visual_data_json=[
+        {"type": "fluid_dynamics", "id": "venturi",
+         "operation": "venturi", "color": "#4CC9F0"},
+    ],
+    audio_script=(
+        "Water flows through a horizontal pipe. At point one, pressure is "
+        "two point zero times ten to the fifth pascals, and speed is two "
+        "point zero meters per second. At point two, pressure is one point "
+        "five times ten to the fifth pascals. What is the speed at point "
+        "two? Bernoulli's equation tells us that the sum of pressure and "
+        "kinetic energy density is constant along a horizontal streamline. "
+        "Solving for v two gives v two equals the square root of v one "
+        "squared plus two times the pressure difference over rho. The "
+        "pressure difference is zero point five times ten to the fifth "
+        "pascals. Plugging in the numbers gives approximately ten point two "
+        "meters per second. The closest answer is C, ten meters per second. "
+        "The speed increases as the pressure decreases."
+    ),
+    orientation="vertical",
+    beats_json=[
+        {"type": "hook", "focus": "venturi"},
+        {"type": "example", "focus": "venturi", "transition": "wipe"},
+        {"type": "punchline", "focus": "venturi"},
+    ],
+    target_duration_sec=60,
+)
+
+# B7. Electric Field
+add(
+    video_id="short_electric_field",
+    concept_type="PYQ",
+    header_title="Find the Electric Field",
+    tagline=r"Apply $E = kQ/r^2$",
+    question_text=("What is the electric field at a distance of 0.50 m from "
+                   "a point charge of +2.0 x 10^-6 C?"),
+    option_a="1.8 x 10^4 N/C",
+    option_b="3.6 x 10^4 N/C",
+    option_c="7.2 x 10^4 N/C",
+    option_d="1.4 x 10^5 N/C",
+    correct_answer="C",
+    equations_json=[
+        r"E=\frac{kQ}{r^2}",
+        r"E=\frac{(9.0\times 10^9)(2.0\times 10^{-6})}{(0.50)^2}=7.2\times 10^4\ \text{N/C}",
+    ],
+    visual_data_json=[
+        {"type": "electric_field", "id": "field", "q": 1.0,
+         "position": [0.0, 0.0], "color": "#4CC9F0"},
+    ],
+    audio_script=(
+        "What is the electric field at a distance of zero point five zero "
+        "meters from a point charge of plus two point zero times ten to the "
+        "minus sixth coulombs? The electric field of a point charge is given "
+        "by E equals k Q over r squared. Here k is the Coulomb constant, "
+        "nine point zero times ten to the ninth. Q is two point zero times "
+        "ten to the minus sixth coulombs. r is zero point five zero meters. "
+        "Plugging in, we get seven point two times ten to the fourth newtons "
+        "per coulomb. The correct answer is C. The field points radially "
+        "outward from the positive charge."
+    ),
+    orientation="vertical",
+    beats_json=[
+        {"type": "hook", "focus": "field"},
+        {"type": "example", "focus": "field", "transition": "wipe"},
+        {"type": "punchline", "focus": "field"},
+    ],
+    target_duration_sec=60,
+)
+
+# B8. Work Integral
+add(
+    video_id="short_work_integral",
+    concept_type="PYQ",
+    header_title="Find the Work Done",
+    tagline=r"Apply $W = \int F\,dx$",
+    question_text=("A force F(x) = 3x^2 N acts on an object from x = 0 to "
+                   "x = 2.0 m. How much work is done?"),
+    option_a="4.0 J",
+    option_b="8.0 J",
+    option_c="12 J",
+    option_d="24 J",
+    correct_answer="B",
+    equations_json=[
+        r"W=\int_0^{2.0} 3x^2\,dx",
+        r"W=\left[x^3\right]_0^{2.0}=8.0\ \text{J}",
+    ],
+    visual_data_json=[
+        {"type": "calculus_graph", "id": "force_curve",
+         "expression": "3*x^2",
+         "x_range": [0.0, 2.0], "y_range": [0.0, 12.0],
+         "x_length": 4.0, "y_length": 4.0,
+         "center": [0.0, 0.0, 0.0]},
+        {"type": "integral_area", "id": "work_area",
+         "expression": "3*x^2", "x_range": [0.0, 2.0],
+         "color": "#4CC9F0"},
+    ],
+    audio_script=(
+        "A force F of x equals three x squared newtons acts on an object "
+        "from x equals zero to x equals two point zero meters. How much work "
+        "is done? The work done by a variable force is the integral of the "
+        "force with respect to position. So W equals the integral from zero "
+        "to two of three x squared d x. The antiderivative of three x squared "
+        "is x cubed. Evaluating from zero to two, we get eight minus zero, "
+        "which is eight. The correct answer is B, eight point zero joules. "
+        "Graphically, the work is the area under the force versus position "
+        "curve."
+    ),
+    orientation="vertical",
+    beats_json=[
+        {"type": "hook", "focus": "force_curve"},
+        {"type": "example", "focus": "work_area", "transition": "wipe"},
+        {"type": "punchline", "focus": "force_curve"},
+    ],
+    target_duration_sec=60,
+)
+
+# B9. Projectile Range
+add(
+    video_id="short_projectile_range",
+    concept_type="PYQ",
+    header_title="Find the Range",
+    tagline=r"Apply $R = v_0^2\sin 2\theta / g$",
+    question_text=("A ball is launched at 20 m/s at an angle of 30 degrees. "
+                   "What is its range on level ground? (g = 9.8 m/s^2)"),
+    option_a="17 m",
+    option_b="35 m",
+    option_c="40 m",
+    option_d="70 m",
+    correct_answer="B",
+    equations_json=[
+        r"R=\frac{v_0^2\sin 2\theta}{g}",
+        r"R=\frac{(20)^2\sin 60^\circ}{9.8}\approx 35\ \text{m}",
+    ],
+    visual_data_json=[
+        {"type": "projectile_motion", "id": "path",
+         "v0": 20.0, "angle": 30.0, "g": 9.8,
+         "color": "#4CC9F0"},
+    ],
+    audio_script=(
+        "A ball is launched at twenty meters per second at an angle of "
+        "thirty degrees. What is its range on level ground? The range of a "
+        "projectile on level ground is given by R equals v zero squared sine "
+        "two theta over g. Here v zero is twenty meters per second, theta is "
+        "thirty degrees, and g is nine point eight meters per second squared. "
+        "Sine of sixty degrees is approximately zero point eight six six. "
+        "Plugging in, we get four hundred times zero point eight six six "
+        "divided by nine point eight, which is approximately thirty five "
+        "point three meters. The correct answer is B, thirty five meters. "
+        "For a given launch speed, the maximum range occurs at forty five "
+        "degrees."
+    ),
+    orientation="vertical",
+    beats_json=[
+        {"type": "hook", "focus": "path"},
+        {"type": "example", "focus": "path", "transition": "wipe"},
+        {"type": "punchline", "focus": "path"},
+    ],
+    target_duration_sec=60,
+)
+
+# B10. Angular Acceleration
+add(
+    video_id="short_angular_acceleration",
+    concept_type="PYQ",
+    header_title="Find the Angular Acceleration",
+    tagline=r"Apply $\tau = I\alpha$",
+    question_text=("A torque of 12 N.m is applied to a solid disk of mass "
+                   "4.0 kg and radius 0.50 m. What is the angular "
+                   "acceleration?"),
+    option_a="3.0 rad/s^2",
+    option_b="6.0 rad/s^2",
+    option_c="12 rad/s^2",
+    option_d="24 rad/s^2",
+    correct_answer="D",
+    equations_json=[
+        r"\tau=I\alpha",
+        r"I=\tfrac{1}{2}MR^2",
+        r"\alpha=\tau/I=12/0.50=24\ \text{rad/s}^2",
+    ],
+    visual_data_json=[
+        {"type": "rotational_motion", "id": "rotation",
+         "shape": "solid_disk", "mass": 4.0, "radius": 1.5,
+         "angular_velocity": 0.0, "torque": 12.0,
+         "color": "#4CC9F0"},
+        {"type": "geometry", "id": "torque_arrow", "dimension": 2,
+         "kind": "polyline", "points": [[1.5, 0.0], [3.0, 0.0]],
+         "color": "#F1C40F"},
+    ],
+    audio_script=(
+        "A torque of twelve newton meters is applied to a solid disk of mass "
+        "four point zero kilograms and radius zero point five zero meters. "
+        "What is the angular acceleration? The moment of inertia of a solid "
+        "disk about its central axis is I equals one half M R squared. "
+        "Plugging in M equals four and R equals zero point five, we get I "
+        "equals zero point five kilogram meter squared. The angular "
+        "acceleration is the torque divided by the moment of inertia. So "
+        "alpha equals twelve divided by zero point five, which is twenty four "
+        "radians per second squared. The correct answer is D. A hoop of the "
+        "same mass and radius would have a larger moment of inertia and "
+        "therefore a smaller angular acceleration."
+    ),
+    orientation="vertical",
+    beats_json=[
+        {"type": "hook", "focus": "rotation"},
+        {"type": "example", "focus": "torque_arrow", "transition": "wipe"},
+        {"type": "punchline", "focus": "rotation"},
+    ],
+    target_duration_sec=60,
+)
 
 
-def main():
-    with open("content_batch.csv", "w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=HEADER,
-                           quoting=csv.QUOTE_MINIMAL)
-        w.writeheader()
-        for r in ROWS:
-            w.writerow(r)
-    print(f"Wrote content_batch.csv with {len(ROWS)} rows, "
-          f"{len(HEADER)} columns each.")
-    print("Day 5: Ch 9-10 of Feynman Vol II (10 rows, horizontal).")
-
+# =====================================================================
+# Write CSV
+# =====================================================================
 
 if __name__ == "__main__":
-    main()
+    out = "content_batch.csv"
+    with open(out, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(
+            f, fieldnames=COLUMNS, quoting=csv.QUOTE_MINIMAL
+        )
+        writer.writeheader()
+        writer.writerows(rows)
+    print(f"Wrote {len(rows)} rows to {out}")
+    print(f"  Horizontal 3-min lectures: {sum(1 for r in rows if r['orientation']=='horizontal')}")
+    print(f"  Vertical 1-min shorts:     {sum(1 for r in rows if r['orientation']=='vertical')}")
