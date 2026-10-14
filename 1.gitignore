@@ -1,0 +1,60 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Local environment variables and secrets
+.env
+.env.*
+!.env.example
+
+# Packaging / build artifacts
+build/
+dist/
+*.egg-info/
+.eggs/
+wheels/
+pip-wheel-metadata/
+
+# Editor and operating-system files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Manim-generated render assets and LaTeX intermediates
+# Keep source code and authored CSV/documentation tracked.
+media/
+
+# Generated video/audio exports
+output_shorts/
+*.tmp
+*.temp
+*.log
+
+# Generated narration/audio files (keep explicitly named source samples)
+narration/
+audio_output/
+generated_audio/
+*.generated.wav
+*.generated.mp3
+
+# Test and local run artifacts
+.pytest_cache/
+test-results/
