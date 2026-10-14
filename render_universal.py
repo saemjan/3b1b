@@ -36,6 +36,7 @@ import textwrap
 import numpy as np
 from manim import *
 from manim import rate_functions as rf
+from calculus_engine import build_calculus_visual
 from geometry_engine import add_rigid_motion, build_geometry
 from physics_simulation import accelerations, simulate_system
 
@@ -1303,6 +1304,10 @@ class UniversalPhysicsScene(VoiceoverMovingCameraScene):
                 return self._prim_momentum_exchange(item)
             if itype in ("graph", "function", "curve"):
                 return self._prim_graph(item)
+            if itype in (
+                    "calculus_graph", "derivative_tangent",
+                    "integral_area", "riemann_sum"):
+                return build_calculus_visual(item, kind=itype)
             if itype in ("shape", "lens", "circle", "rectangle",
                          "ellipse", "polygon"):
                 return self._prim_shape(item)

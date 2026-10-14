@@ -63,6 +63,7 @@ KNOWN_PRIMITIVES = {
     "arc", "angle", "angle_arc",
     "brace",
     "graph", "function", "curve", "secant_tangent",
+    "calculus_graph", "derivative_tangent", "integral_area", "riemann_sum",
     "shape", "lens", "circle", "rectangle", "ellipse", "polygon",
     "text", "group",
     # Motion

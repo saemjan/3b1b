@@ -334,6 +334,55 @@ limited to 256 points); arbitrary meshes, deformable solids, and every possible
 geometric construction are not implied. Prefer one polyline/polygon primitive
 over hundreds of separate line objects where possible.
 
+### Single-variable calculus graphics
+
+The renderer also supports reusable calculus visuals through
+[`calculus_engine.py`](./calculus_engine.py): `calculus_graph` plots a function,
+`derivative_tangent` compares a secant with a numerically estimated tangent,
+`integral_area` shades the region between a curve and a baseline, and
+`riemann_sum` draws left-, right-, or midpoint-sampled rectangles. Each
+primitive accepts `expression`, `x_range`, `y_range`, `center`, `x_length`,
+and `y_length`; interval visuals also accept `a` and `b`.
+
+```json
+[
+  {
+    "type": "derivative_tangent",
+    "id": "slope_at_one",
+    "expression": "x^2",
+    "x_range": [-2, 2],
+    "y_range": [0, 4],
+    "x0": 1,
+    "delta": 0.6
+  },
+  {
+    "type": "riemann_sum",
+    "id": "area_approximation",
+    "expression": "x^2",
+    "x_range": [0, 2],
+    "y_range": [0, 4],
+    "a": 0,
+    "b": 2,
+    "rectangles": 8,
+    "sample": "midpoint"
+  },
+  {
+    "type": "integral_area",
+    "id": "exact_region",
+    "expression": "x^2",
+    "x_range": [0, 2],
+    "y_range": [0, 4],
+    "a": 0,
+    "b": 2
+  }
+]
+```
+
+Expressions are arithmetic over `x` with `pi`, `e`, powers (`^` or `**`),
+and common functions including `sin`, `cos`, `tan`, `exp`, `log`, and `sqrt`.
+They are parsed with a restricted evaluator, not executed as Python. Riemann
+sums and shaded regions are bounded to 256 rectangles/samples per visual.
+
 ### Dual-format concept generator
 
 The repo now includes a generalized generator for arbitrary ideas and problems:
@@ -547,6 +596,8 @@ arc / angle / angle_arc Circular arc
 brace Curly brace between two points
 graph / function / curve Axes + plotted expression
 secant_tangent Secant line converging to the tangent for constant acceleration
+calculus_graph / derivative_tangent Function plot; secant and tangent at a selected x
+integral_area / riemann_sum Shaded definite-integral region and finite-sum rectangles
 shape / lens / circle / rectangle / ellipse / polygon Geometric figures
 text Plain or LaTeX text
 group Container for child primitives
