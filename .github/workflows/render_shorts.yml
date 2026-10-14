@@ -8,14 +8,23 @@ on:
       - "generate_csv.py"
       - "generate_audio.py"
       - "sound_design.py"
+      - "soundscape.py"
+      - "text_normalizer.py"
       - "tools/generate_topic_bundle.py"
       - "tools/generate_feynman_series.py"
+      - "calculus_engine.py"
+      - "electromagnetics_engine.py"
+      - "geometry_engine.py"
+      - "linear_algebra_engine.py"
+      - "physics_simulation.py"
+      - "visual_kit.py"
       - "render_universal.py"
       - "batch_runner.py"
       - "schema_validator.py"
       - "requirements.txt"
       - ".github/workflows/render_shorts.yml"
-      - "examples/feynman_20_video_batch.csv"
+      - "CSV_AUTHORING.md"
+      - "examples/**"
   workflow_dispatch:
     inputs:
       only:
@@ -233,7 +242,7 @@ jobs:
             echo "::add-mask::saem_voice_sample.wav"
             echo "::notice::Voice reference present"
           else
-            echo "::warning title=No voice sample::saem_voice_sample.wav is missing; falling back to manifest durations"
+            echo "::warning title=No voice sample::Producing silent preview audio at each row's target duration"
           fi
 
       - name: Render shard ${{ matrix.shard }} of 4
@@ -254,6 +263,9 @@ jobs:
           fi
           if [ -n "$RENDER_QUALITY" ]; then
             args+=(--quality "$RENDER_QUALITY")
+          fi
+          if [ ! -f saem_voice_sample.wav ]; then
+            args+=(--skip-audio)
           fi
           if "${args[@]}"; then
             rc=0

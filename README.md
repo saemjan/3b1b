@@ -429,6 +429,42 @@ Field maps are limited to 256 sample points per visual; wire-field integration
 is bounded to 4096 segments. The point-charge singularity and polarization
 constraints are reported explicitly rather than regularized.
 
+### Linear algebra graphics
+
+[`linear_algebra_engine.py`](./linear_algebra_engine.py) provides numeric
+`vector_add`, `dot_product`, `cross_product`, and `determinant` helpers, and a
+`linear_algebra` visual primitive with `vectors`, `dot`, `cross`, or
+`determinant` operations. Vector calculations accept finite 2D or 3D inputs
+with matching dimensions. The cross product returns a 3D vector for 3D inputs
+and the signed z-component (scalar) for 2D inputs. Numeric determinants
+support square matrices through 8×8; determinant graphics currently show the
+signed area of a 2×2 matrix's column parallelogram.
+
+```json
+[
+  {
+    "type": "linear_algebra",
+    "id": "vector_sum",
+    "operation": "vectors",
+    "a": [2, 1],
+    "b": [-1, 2]
+  },
+  {
+    "type": "linear_algebra",
+    "id": "dot_product",
+    "operation": "dot",
+    "a": [2, 1],
+    "b": [-1, 2]
+  },
+  {
+    "type": "linear_algebra",
+    "id": "determinant",
+    "operation": "determinant",
+    "matrix": [[2, -1], [1, 2]]
+  }
+]
+```
+
 ### Dual-format concept generator
 
 The repo now includes a generalized generator for arbitrary ideas and problems:
@@ -501,6 +537,9 @@ To render this batch in GitHub Actions, use **Run workflow** and select
 `examples/feynman_20_video_batch.csv` as the CSV batch. Locally, `--csv`
 selects the same input without copying over the production batch.
 
+See [CSV_AUTHORING.md](CSV_AUTHORING.md) for the 10-concept/10-problem
+capability matrix, multi-engine visual examples, and the current CSV schema.
+
 ---
 
 🔁 Daily Workflow
@@ -515,7 +554,8 @@ $EDITOR content_batch.csv
 
 Step 2 — Paste one new row
 
-The row has 14 columns, in this exact order:
+The row has 14 required columns. The current generators append two optional
+columns, `beats_json` and `target_duration_sec`:
 
 ```csv
 video_id,concept_type,header_title,tagline,question_text,option_a,option_b,option_c,option_d,correct_answer,equations_json,visual_data_json,audio_script,orientation
@@ -563,7 +603,8 @@ artifacts.
 
 📊 CSV Schema
 
-14 columns, in this exact order. Every row must have all 14.
+14 required columns, in this exact order. The generators may append the optional
+`beats_json` and `target_duration_sec` columns, for 16 total:
 
 # Column Type Required? Notes
 1 video_id string ✅ Filesystem-safe. Unique per row. Pattern: feynman_dayN_NN_slug
@@ -578,8 +619,14 @@ artifacts.
 10 correct_answer string PYQ only e.g. Correct Answer: (A) 50 km/h
 11 equations_json JSON array ✅ LaTeX strings. Escape backslashes as \\.
 12 visual_data_json JSON array ✅ Primitive dicts. See catalog below.
-13 audio_script string ✅ 200–700 words. Spoken English, Feynman tone.
+13 audio_script string ✅ Spoken narration; write to the requested runtime.
 14 orientation enum ✅ vertical (9:16) or horizontal (16:9). Default: vertical.
+15 beats_json JSON array Optional. Timed story-beat types and focus IDs.
+16 target_duration_sec number Optional. Narration pacing hint used by validation.
+
+For timing guidance, the validator expects about 112–180 words at 60 seconds
+and 337–540 words at 180 seconds when `target_duration_sec` is present. The
+render duration follows the generated narration audio, not this metadata field.
 
 JSON escaping — the two-layer rule
 
@@ -614,7 +661,9 @@ schema_validator.py checks this and warns if any primitive falls outside.
 
 Empty-column rule
 
-For a GENERIC video, all five PYQ columns are empty. That is seven consecutive commas between tagline and equations_json:
+For a GENERIC video, all six PYQ fields are empty: `question_text`, four
+options, and `correct_answer`. That creates seven consecutive commas between
+tagline and equations_json:
 
 ```
 ...,The atomic hypothesis,,,,,,,"[""1\\,\\text{\\AA}...""]"
@@ -646,6 +695,7 @@ calculus_graph / derivative_tangent Function plot; secant and tangent at a selec
 integral_area / riemann_sum Shaded definite-integral region and finite-sum rectangles
 electric_field / magnetic_field Coulomb point-charge and Biot–Savart wire-field maps
 electromagnetic_wave Synchronized electric and magnetic plane-wave traces
+linear_algebra Vector addition, dot/cross products, or 2D determinant area
 shape / lens / circle / rectangle / ellipse / polygon Geometric figures
 text Plain or LaTeX text
 group Container for child primitives
@@ -763,28 +813,22 @@ Stage 2 — XTTS-v2 synthesis (generate_audio.py)
 
 Output: temp_audio/<video_id>_voice.wav at 24 kHz, then resampled to 44.1 kHz.
 
-Stage 3 — Voice mastering (soundscape.py)
+Stage 3 — Voice preparation (generate_audio.py)
 
-```
-DC remove  →  high-pass 80 Hz  →  soft compress  →  low-pass 12 kHz
-      →  LUFS normalize to −14  →  15 ms fades  →  peak limit 0.891
-```
+XTTS output is resampled to 44.1 kHz for the final mix. The `soundscape.py`
+mastering helpers are available separately; they are not currently invoked by
+the batch runner.
 
-Stage 4 — Ambient pad
+Stage 4 — Ambient bed and cues
 
-Low-pass filtered noise at −34 dB, matched to voice length.
+`generate_audio.py` creates a quiet, slowly shifting tonal bed matched to voice
+length. The renderer adds locally synthesized transition cues; the final mix
+keeps those cues under the narration.
 
 Stage 5 — FFmpeg mix (inside batch_runner.py)
 
-```bash
-ffmpeg -i video.mp4 -i voice.wav -i pad.wav \
-  -filter_complex "[1:a][2:a]amix=inputs=2:duration=first:normalize=0[amixout];\
-                   [amixout]apad=pad_len=192000[aout];\
-                   [0:v]tpad=stop_mode=clone:stop_duration=2,fps=30[vout]" \
-  -map "[vout]" -map "[aout]" \
-  -c:v libx264 -preset veryfast -crf 20 \
-  -c:a aac -b:a 192k -ar 44100 -pix_fmt yuv420p -shortest output.mp4
-```
+The runner mixes narration and bed, includes renderer cue audio when present,
+extends the video through the closing card, and encodes H.264/AAC for upload.
 
 ---
 
@@ -796,12 +840,12 @@ Runs before every render. Stdlib-only (no numpy, no manim). Checks:
 
 Check Severity
 Required columns present ERROR
-Row has exactly 14 columns ERROR
+14 required columns are present ERROR
 equations_json parses as a list ERROR
 visual_data_json parses as a list ERROR
 Every primitive type is in KNOWN_PRIMITIVES WARN
 Every pos/start/end/center is within frame WARN
-audio_script is 200–700 words WARN
+audio_script length is plausible for target_duration_sec WARN
 concept_type is one of the four enums WARN
 language is in SUPPORTED_LANGS WARN
 quality is in SUPPORTED_QUALITY WARN
@@ -868,9 +912,10 @@ Your header row is wrong. Run:
 head -1 content_batch.csv
 ```
 
-and check that all 14 column names match the schema exactly.
+and check that all 14 required column names match the schema. Generated rows
+may also include the optional `beats_json` and `target_duration_sec` columns.
 
-"Row N: X cols, header has 14"
+"Row N: X cols, header has Y"
 
 Row N is malformed. Common causes:
 
@@ -880,10 +925,12 @@ Row N is malformed. Common causes:
 
 Fix by opening the file and counting commas in that line.
 
-GitHub says "should have 14 columns"
+GitHub's CSV preview reports a column-count warning
 
-GitHub's CSV preview can't parse very wide rows. Your file is valid if
-schema_validator.py passes locally. To silence GitHub, add a .gitattributes:
+GitHub's CSV preview can misread quoted JSON cells and optional trailing
+columns. The authoritative check is `schema_validator.py`; the renderer uses
+the same CSV parser as Python. To suppress Git's tabular diff for CSV files,
+you can add a .gitattributes entry:
 
 ```
 *.csv -diff linguist-generated
