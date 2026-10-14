@@ -1,6 +1,10 @@
 📁 FUTURE_ARCHITECTURE.md — SaemLabs Physics Engine Expansion Plan
 
-Save at repo root. This is the definitive blueprint for scaling from 10 videos per batch to a global multilingual physics education platform.
+> **Status:** This is a proposal, not a description of implemented features.
+> For the current engine architecture and an implementation-status roadmap, see
+> [ARCHITECTURE.md](ARCHITECTURE.md). Older statements below describing the
+> "current state" are historical assumptions; verify them against that file
+> before treating them as repository facts.
 
 ---
 

@@ -71,6 +71,10 @@ Feynman's "atomic hypothesis." Ready to upload.
 
 ## 🏗 Architecture
 
+For the current component map and a clearly separated future roadmap, see
+[ARCHITECTURE.md](ARCHITECTURE.md). The document below is a quick pipeline
+overview.
+
 Four stages, orchestrated by `batch_runner.py`. Each stage is a separate Python
 script you can run standalone for debugging.
 

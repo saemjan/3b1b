@@ -1,5 +1,10 @@
 ARCHIVE.md — SaemLabs Physics Pipeline, Master Savepoint v2.2
 
+> **Historical snapshot:** This archive records the v2.2-era pipeline and is
+> not a current rebuild specification. Use [README.md](README.md) for setup and
+> [ARCHITECTURE.md](ARCHITECTURE.md) for the current implemented design and
+> future roadmap.
+
 Save this as ARCHIVE.md at your repo root. If you ever lose everything, this one file plus your saem_voice_sample.wav rebuilds the entire system.
 
 ---
