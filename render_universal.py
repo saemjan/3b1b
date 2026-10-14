@@ -617,8 +617,10 @@ class SaemLabsBranding:
 
     @classmethod
     def closing_card(cls, scene, duration=5.0):
-        frame = scene.camera.frame
-        fade_targets = [m for m in scene.mobjects if m is not frame]
+        frame = getattr(scene.camera, "frame", None)
+        fade_targets = [
+            m for m in scene.mobjects if frame is None or m is not frame
+        ]
         if fade_targets:
             scene.play(*[FadeOut(m) for m in fade_targets],
                        run_time=0.5,
@@ -634,7 +636,10 @@ class SaemLabsBranding:
         cta.move_to(DOWN * 1.8)
         cta.set_opacity(0)
 
-        scene.add(logo, cta)
+        if frame is None and hasattr(scene, "add_fixed_in_frame_mobjects"):
+            scene.add_fixed_in_frame_mobjects(logo, cta)
+        else:
+            scene.add(logo, cta)
 
         scene.play(logo[0].animate.set_opacity(1),
                    logo[1].animate.set_opacity(1),
