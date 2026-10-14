@@ -383,6 +383,52 @@ and common functions including `sin`, `cos`, `tan`, `exp`, `log`, and `sqrt`.
 They are parsed with a restricted evaluator, not executed as Python. Riemann
 sums and shaded regions are bounded to 256 rectangles/samples per visual.
 
+### Electromagnetic fields and waves
+
+[`electromagnetics_engine.py`](./electromagnetics_engine.py) adds SI-based
+numerical models and three renderer primitives. `electric_field` samples the
+Coulomb field from point charges (`position` in metres and `charge` in
+coulombs); `magnetic_field` samples the Biot–Savart field of finite straight
+wires (`start`, `end` in metres and `current` in amperes); and
+`electromagnetic_wave` animates synchronized electric and magnetic plane-wave
+traces with propagation direction. Both field maps show vector direction and
+use arrow length normalized within the displayed grid, not as a calibrated
+field-strength scale. The paired wave traces are normalized for legibility;
+the magnetic amplitude relation for a vacuum wave is `B₀ = E₀ / c`.
+
+```json
+[
+  {
+    "type": "electric_field",
+    "id": "dipole_field",
+    "charges": [
+      {"position": [-1, 0, 0], "charge": 1e-9},
+      {"position": [1, 0, 0], "charge": -1e-9}
+    ],
+    "x_range": [-3, 3],
+    "y_range": [-2, 2],
+    "columns": 13,
+    "rows": 9
+  },
+  {
+    "type": "electromagnetic_wave",
+    "id": "plane_wave",
+    "amplitude": 1,
+    "frequency": 1,
+    "speed": 2,
+    "length": 7
+  }
+]
+```
+
+The numerical API `electric_field`, `magnetic_field_from_wire`, and
+`plane_wave_fields` exposes the underlying vector calculations for reuse and
+testing. It validates transverse polarization and the dispersion relation
+`ω = v k`, and computes `B = k̂ × E / v` for the requested phase speed `v`.
+Field maps are limited to 256 sample points per visual; wire-field integration
+is bounded to 4096 segments. The point-charge singularity and polarization
+constraints are reported explicitly rather than regularized.
+
 ### Dual-format concept generator
 
 The repo now includes a generalized generator for arbitrary ideas and problems:
@@ -598,6 +644,8 @@ graph / function / curve Axes + plotted expression
 secant_tangent Secant line converging to the tangent for constant acceleration
 calculus_graph / derivative_tangent Function plot; secant and tangent at a selected x
 integral_area / riemann_sum Shaded definite-integral region and finite-sum rectangles
+electric_field / magnetic_field Coulomb point-charge and Biot–Savart wire-field maps
+electromagnetic_wave Synchronized electric and magnetic plane-wave traces
 shape / lens / circle / rectangle / ellipse / polygon Geometric figures
 text Plain or LaTeX text
 group Container for child primitives

@@ -37,6 +37,7 @@ import numpy as np
 from manim import *
 from manim import rate_functions as rf
 from calculus_engine import build_calculus_visual
+from electromagnetics_engine import build_electromagnetics_visual
 from geometry_engine import add_rigid_motion, build_geometry
 from physics_simulation import accelerations, simulate_system
 
@@ -228,6 +229,7 @@ SELF_ANIMATED = {
     "equation_morph", "numerical_chain", "warning_box",
     "quiz_frame", "concept_map", "driven_oscillator",
     "wave_pulse", "harmonic_decomposition", "falling_energy",
+    "electromagnetic_wave",
 }
 
 
@@ -848,7 +850,7 @@ class UniversalPhysicsScene(VoiceoverMovingCameraScene):
                 fit_to_frame(mob)
             if itype in SELF_ANIMATED:
                 self._self_animated.append(mob)
-                if itype == "falling_energy":
+                if itype in ("falling_energy", "electromagnetic_wave"):
                     group.add(mob)
             else:
                 group.add(mob)
@@ -1308,6 +1310,10 @@ class UniversalPhysicsScene(VoiceoverMovingCameraScene):
                     "calculus_graph", "derivative_tangent",
                     "integral_area", "riemann_sum"):
                 return build_calculus_visual(item, kind=itype)
+            if itype in (
+                    "electric_field", "magnetic_field",
+                    "electromagnetic_wave"):
+                return build_electromagnetics_visual(item, kind=itype)
             if itype in ("shape", "lens", "circle", "rectangle",
                          "ellipse", "polygon"):
                 return self._prim_shape(item)

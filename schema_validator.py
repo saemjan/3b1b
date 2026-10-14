@@ -64,6 +64,7 @@ KNOWN_PRIMITIVES = {
     "brace",
     "graph", "function", "curve", "secant_tangent",
     "calculus_graph", "derivative_tangent", "integral_area", "riemann_sum",
+    "electric_field", "magnetic_field", "electromagnetic_wave",
     "shape", "lens", "circle", "rectangle", "ellipse", "polygon",
     "text", "group",
     # Motion
