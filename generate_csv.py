@@ -96,7 +96,7 @@ def arc_short(focus: str) -> list[dict[str, Any]]:
 # 3. Engine primitive builders
 # ===========================================================================
 
-# --- calculus_engine ------------------------------------------------------
+# --- calculus_engine -----------------------------------------------------
 
 def calculus_graph(id_, expr, xr, yr, xl=6.0, yl=3.0,
                    ctr=(0.0, 0.0, 0.0), color=PRIMARY):
