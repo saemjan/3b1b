@@ -1595,7 +1595,7 @@ chapter(44, "Quantum Structure", "ohanian_ch44_exclusion",
     "Why do atoms fill their shells instead of collapsing?",
     [r"n,\ l,\ m,\ m_s\ \text{unique per electron}"],
     [crystal("lattice"),
-     potential_well("well", "0.5*x**2", (-3.0, 3.0), (0.0, 5.0))],
+     landscape("well", "0.5*x**2", (-3.0, 3.0), (0.0, 5.0))
     "I am going to show you why chemistry exists. Every electron in an "
     "atom has four quantum numbers. Principal, orbital, magnetic, "
     "spin. No two can have the same four. Pauli exclusion. This is "
