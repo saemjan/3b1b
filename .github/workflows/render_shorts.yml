@@ -5,13 +5,11 @@ on:
     branches: [main]
     paths:
       - "content_batch.csv"
-      - "generate_csv.py"
       - "generate_audio.py"
       - "sound_design.py"
       - "soundscape.py"
       - "text_normalizer.py"
       - "tools/generate_topic_bundle.py"
-      - "tools/generate_feynman_series.py"
       - "calculus_engine.py"
       - "electromagnetics_engine.py"
       - "fluid_dynamics_engine.py"
@@ -70,7 +68,7 @@ env:
   HF_HOME: ${{ github.workspace }}/.hf_cache
   BATCH_CSV: ${{ inputs.csv_path || 'content_batch.csv' }}
   VIDEO_IDS: ${{ inputs.only || '' }}
-  RENDER_QUALITY: ${{ inputs.quality || '' }}
+  RENDER_QUALITY: ${{ inputs.quality || '1080p' }}
 
 jobs:
   # ========================================================== validate
@@ -88,12 +86,14 @@ jobs:
         with:
           python-version: "3.11"
      
-      - name: Generate content CSV
+      - name: Generate content CSV (Optional)
         env:
           TOPIC_CONCEPT: ${{ inputs.concept }}
           TOPIC_PROBLEM: ${{ inputs.problem }}
           VIDEO_FORMAT: ${{ inputs.format || 'both' }}
         run: |
+          # ONLY run generation if BOTH concept and problem are provided.
+          # Do NOT auto-run generate_csv.py to prevent overwriting manual pushes.
           if [ -n "$TOPIC_CONCEPT" ] || [ -n "$TOPIC_PROBLEM" ]; then
             if [ -z "$TOPIC_CONCEPT" ] || [ -z "$TOPIC_PROBLEM" ]; then
               echo "::error::Provide both concept and problem, or leave both blank."
@@ -104,33 +104,44 @@ jobs:
               --problem "$TOPIC_PROBLEM" \
               --kind "$VIDEO_FORMAT" \
               --output "$BATCH_CSV"
-          elif [ "$BATCH_CSV" = "content_batch.csv" ] && [ -f generate_csv.py ]; then
-            python3 generate_csv.py
           fi
 
-      - name: Inspect CSV header and rows
+      - name: Inspect CSV and enforce column count
         run: |
           if [ ! -f "$BATCH_CSV" ]; then
             echo "::error::Batch CSV not found: $BATCH_CSV"
             exit 1
           fi
+          
           echo "::group::CSV header"
           head -1 "$BATCH_CSV"
           echo "::endgroup::"
 
-          echo "::group::Row summary"
+          echo "::group::Row summary & Strict Column Check"
           python3 - <<'PY'
-          import csv, os
+          import csv, os, sys
           with open(os.environ["BATCH_CSV"], newline="", encoding="utf-8") as f:
               r = csv.reader(f)
-              header = next(r)
+              try:
+                  header = next(r)
+              except StopIteration:
+                  sys.exit("::error::CSV file is empty")
+                  
+              expected_cols = len(header)
+              print(f"Columns: {expected_cols}")
+              
               rows = list(r)
-          print(f"Columns: {len(header)}")
-          print(f"Rows:    {len(rows)}")
-          for i, row in enumerate(rows, start=2):
-              vid = row[0] if row else "<blank>"
-              orient = row[13] if len(row) > 13 else "<missing>"
-              print(f"  row {i:02d}  {vid:50s}  orientation={orient}")
+              print(f"Rows:    {len(rows)}")
+              
+              for i, row in enumerate(rows, start=2):
+                  if len(row) != expected_cols:
+                      print(f"::error::Row {i} has {len(row)} columns, expected {expected_cols}.")
+                      print(f"::error::Check for unescaped commas in text fields (e.g., options, tags).")
+                      sys.exit(1)
+                  
+                  vid = row[0] if row else "<blank>"
+                  orient = row[13] if len(row) > 13 else "<missing>"
+                  print(f"  row {i:02d}  {vid:50s}  orientation={orient}")
           PY
           echo "::endgroup::"
 
@@ -165,10 +176,9 @@ jobs:
               csv_orient = "vertical"  # fallback only for rows without a value
           else:
               csv_orient = next(iter(explicit_orients), "vertical")
-          env_orient = os.environ.get("SAEM_ORIENTATION", "vertical").lower()
+          env_orient = os.environ.get("SAEM_ORIENTATION", "horizontal").lower()
           if csv_orient != env_orient:
-              print(f"::warning::CSV={csv_orient} workflow={env_orient} "
-                    f"(using CSV value)")
+              print(f"::warning::CSV={csv_orient} workflow={env_orient} (using CSV value)")
           with open(os.environ["GITHUB_OUTPUT"], "a") as f:
               f.write(f"value={csv_orient}\n")
           PY
@@ -258,13 +268,12 @@ jobs:
             --chunk ${{ matrix.shard }}
             --total-chunks 4
             --retries 2
+            --orientation "$SAEM_ORIENTATION"
+            --quality "$RENDER_QUALITY"
             --log-file "output_shorts/runlog_shard_${{ matrix.shard }}.json"
           )
           if [ -n "$VIDEO_IDS" ]; then
             args+=(--only "$VIDEO_IDS")
-          fi
-          if [ -n "$RENDER_QUALITY" ]; then
-            args+=(--quality "$RENDER_QUALITY")
           fi
           if [ ! -f saem_voice_sample.wav ]; then
             args+=(--skip-audio)
@@ -281,6 +290,7 @@ jobs:
         id: tally
         if: always()
         run: |
+          # Only count final videos (ignores _raw.mp4 if stitch failed)
           COUNT=$(find output_shorts -maxdepth 1 -name '*_final.mp4' 2>/dev/null | wc -l)
           echo "count=${COUNT}" >> "$GITHUB_OUTPUT"
 
@@ -289,10 +299,11 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: shard-${{ matrix.shard }}
+          # ONLY upload final MP4s to prevent clutter
           path: |
-            output_shorts/*.mp4
+            output_shorts/*_final.mp4
             output_shorts/*.json
-          retention-days: 7
+          retention-days: 1
           if-no-files-found: warn
 
       - name: Job summary for shard ${{ matrix.shard }}
@@ -327,18 +338,21 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: merged_output
+          pattern: shard-*
+          merge-multiple: true
 
-      - name: Flatten artifacts
+      - name: Flatten artifacts (Final MP4s and JSONs only)
         run: |
           echo "::group::Flatten"
-          find merged_output -type f \( -name "*.mp4" -o -name "*.json" \) \
+          find merged_output -type f \( -name "*_final.mp4" -o -name "*.json" \) \
             -exec cp {} final_output/ \;
           echo "::endgroup::"
 
       - name: Tally final output
         id: final
         run: |
-          MP4S=$(find final_output -name "*.mp4" 2>/dev/null | wc -l)
+          # EXACT match for final videos to prevent 24 instead of 20 bug
+          MP4S=$(find final_output -name "*_final.mp4" 2>/dev/null | wc -l)
           SIZE=$(du -sh final_output 2>/dev/null | cut -f1 || echo "0")
           echo "mp4s=${MP4S}" >> "$GITHUB_OUTPUT"
           echo "size=${SIZE}" >> "$GITHUB_OUTPUT"
@@ -350,6 +364,7 @@ jobs:
           name: physics-shorts-bundle
           path: final_output/
           retention-days: 7
+          if-no-files-found: warn
 
       - name: Final job summary
         run: |
@@ -374,6 +389,9 @@ jobs:
             if [ "${MP4S}" -eq 0 ]; then
               echo "> [!WARNING]"
               echo "> No MP4s were produced. Check the shard summaries above."
+            elif [ "${MP4S}" -ne "${ROWS}" ]; then
+              echo "> [!CAUTION]"
+              echo "> MP4 count (${MP4S}) does not match queued rows (${ROWS}). Some renders may have failed."
             else
               echo "> [!NOTE]"
               echo "> Download the \`physics-shorts-bundle\` artifact to retrieve all videos."
