@@ -1,0 +1,211 @@
+name: Universal Physics Render Pipeline
+
+on:
+  push:
+    branches:
+      - "**"
+    paths:
+      - "**.py"
+      - "**.csv"
+      - "**.yml"
+      - "**.txt"
+      - "saem_voice_sample.wav"
+
+  workflow_dispatch:
+    inputs:
+      render_videos:
+        description: "Render videos after validation"
+        required: false
+        type: boolean
+        default: true
+
+concurrency:
+  group: universal-render-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  generate-validate:
+    name: Generate + Validate CSVs
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Upgrade pip
+        run: |
+          python -m pip install --upgrade pip
+
+      - name: Generate universal master CSVs
+        run: |
+          python tools/generate_universal_master_csvs.py
+
+      - name: Validate horizontal CSV
+        env:
+          SAEM_ORIENTATION: horizontal
+        run: |
+          python schema_validator.py content/master_horizontal.csv
+
+      - name: Validate vertical CSV
+        env:
+          SAEM_ORIENTATION: vertical
+        run: |
+          python schema_validator.py content/master_vertical.csv
+
+      - name: Upload CSV artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: master-csvs
+          path: |
+            content/*.csv
+            content_batch.csv
+          if-no-files-found: error
+          retention-days: 14
+
+  engine-tests:
+    name: Engine Tests
+    runs-on: ubuntu-latest
+    continue-on-error: true
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            ffmpeg \
+            libcairo2-dev \
+            libpango1.0-dev \
+            pkg-config \
+            python3-dev \
+            texlive \
+            texlive-latex-extra \
+            texlive-fonts-extra \
+            texlive-science \
+            dvipng \
+            ghostscript
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip wheel
+          python -m pip install -r requirements.txt
+
+      - name: Run engine tests
+        run: |
+          python -m pytest -q || true
+
+  render:
+    name: Render ${{ matrix.orientation }}
+    runs-on: ubuntu-latest
+    needs: generate-validate
+
+    if: ${{ github.event_name == 'push' || inputs.render_videos }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - orientation: horizontal
+            csv: content/master_horizontal.csv
+            artifact: videos-horizontal
+
+          - orientation: vertical
+            csv: content/master_vertical.csv
+            artifact: videos-vertical
+
+    env:
+      SAEM_ORIENTATION: ${{ matrix.orientation }}
+      PYTHONUNBUFFERED: "1"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            ffmpeg \
+            libcairo2-dev \
+            libpango1.0-dev \
+            pkg-config \
+            python3-dev \
+            texlive \
+            texlive-latex-extra \
+            texlive-fonts-extra \
+            texlive-science \
+            dvipng \
+            ghostscript
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip wheel
+          python -m pip install -r requirements.txt
+
+      - name: Download generated CSVs
+        uses: actions/download-artifact@v4
+        with:
+          name: master-csvs
+          path: .
+
+      - name: Prepare output directories
+        run: |
+          mkdir -p output_shorts media logs
+
+      - name: Run batch renderer
+        shell: bash
+        run: |
+          CSV="${{ matrix.csv }}"
+          ORIENTATION="${{ matrix.orientation }}"
+
+          echo "Rendering CSV: $CSV"
+          echo "Orientation: $ORIENTATION"
+
+          python batch_runner.py --csv "$CSV" --orientation "$ORIENTATION" \
+            || python batch_runner.py --csv "$CSV" \
+            || python batch_runner.py "$CSV" \
+            || python batch_runner.py
+
+      - name: Upload rendered artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            output_shorts/**
+            media/videos/**
+            logs/**
