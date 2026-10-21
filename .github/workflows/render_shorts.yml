@@ -146,10 +146,20 @@ jobs:
       - run: mkdir -p output_shorts media logs
       - name: Run batch renderer (incremental)
         shell: bash
-        env: { ONLY: ${{ inputs.only }} }
+        env:
+          ONLY: ${{ inputs.only }}
         run: |
           CSV="${{ matrix.csv }}"; OR="${{ matrix.orientation }}"
           if [ -n "$ONLY" ]; then
+            python batch_runner.py --csv "$CSV" --orientation "$OR" --only "$ONLY" \
+              || python batch_runner.py --csv "$CSV" --only "$ONLY" \
+              || python batch_runner.py --csv "$CSV" --orientation "$OR" \
+              || python batch_runner.py --csv "$CSV"
+          else
+            python batch_runner.py --csv "$CSV" --orientation "$OR" \
+              || python batch_runner.py --csv "$CSV" \
+              || python batch_runner.py
+          fi
             python batch_runner.py --csv "$CSV" --orientation "$OR" --only "$ONLY" \
               || python batch_runner.py --csv "$CSV" --only "$ONLY" \
               || python batch_runner.py --csv "$CSV" --orientation "$OR" \
