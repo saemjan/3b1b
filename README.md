@@ -3,6 +3,13 @@ README.md
 ```markdown
 # 🎬 Feynman Physics Shorts — Automated Video Pipeline
 
+
+----------
+
+
+
+#OLD-STYLE :
+
 **Turn Feynman's Lectures on Physics into daily 3-minute vertical videos — automatically.**
 
 A production pipeline that reads one CSV, synthesizes a cloned voice, renders a
