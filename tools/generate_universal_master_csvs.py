@@ -777,7 +777,7 @@ VERTICAL_SPECS = [
 
 
 def write_csv(path: Path, rows: list[dict]) -> None:
-    with open(path, "w", newline="", encoding="utf-8-sig") as f:
+    with open(path, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(
             f,
             fieldnames=FIELDNAMES,
