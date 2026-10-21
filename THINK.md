@@ -33,6 +33,8 @@ writers utf-8, readers utf-8-sig. Trigger policy: render ONLY on explicit intent
 - #91 FAIL(11s) BOM incident → R1,R2.
 - #92 PASS 1h55m — first autonomous run; 10/10 both orientations; 105MB+84MB artifacts; warnings = vocab+wordband+manim deprecations → R4,R5,R6,R7. New lesson: schema-commit re-triggered full render → R9,R10.
 
+- #97 success 2026-10-21 wall=– sigs=clean
+
 ## 4. Open hypotheses
 - H1 ManimGX (wgpu) hot primitives ≥10× speed. H2 tts_router (edge drafts / XTTS finals).
 - H3 stable-ts ±50ms caption sync. H4 FAISS-grounded LLM authoring + human gate.
