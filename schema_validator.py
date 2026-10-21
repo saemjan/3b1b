@@ -178,7 +178,7 @@ def validate_csv(path: str) -> bool:
     has_errors = False
     seen_vids: set[str] = set()
 
-    with open(path, "r", encoding="utf-8", newline="") as f:
+    with open(path, "r", encoding="utf-8-sig", newline="") as f:
         reader = csv.reader(f)
         try:
             header = next(reader)
