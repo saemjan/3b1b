@@ -41,6 +41,8 @@ writers utf-8, readers utf-8-sig. Trigger policy: render ONLY on explicit intent
 
 - #102 success 2026-10-22 wall=– sigs=clean
 
+- #105 gate=success render=skipped 2026-10-22 wall=– sigs=clean
+
 ## 4. Open hypotheses
 - H1 ManimGX (wgpu) hot primitives ≥10× speed. H2 tts_router (edge drafts / XTTS finals).
 - H3 stable-ts ±50ms caption sync. H4 FAISS-grounded LLM authoring + human gate.
