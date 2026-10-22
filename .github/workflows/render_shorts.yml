@@ -86,11 +86,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.11" }
-      - name: Install system dependencies
+      - name: Minimal system deps (no TeX)
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg libcairo2-dev libpango1.0-dev pkg-config \
-            python3-dev texlive texlive-latex-extra texlive-fonts-extra texlive-science dvipng ghostscript
+          sudo apt-get install -y --no-install-recommends \
+            ffmpeg libcairo2-dev libpango1.0-dev pkg-config python3-dev
       - uses: actions/cache@v4
         with:
           path: ~/.cache/pip
@@ -105,7 +105,7 @@ jobs:
     name: Render ${{ matrix.orientation }}
     runs-on: ubuntu-latest
     needs: [changes, generate-validate]
-    if: ${{ needs.changes.outputs.render == 'true' }}   # ← THE GATE (R9)
+    if: ${{ needs.changes.outputs.render == 'true' }}
     strategy:
       fail-fast: false
       matrix:
@@ -117,11 +117,16 @@ jobs:
       PYTHONUNBUFFERED: "1"
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/cache@v4                      # R7: XTTS model
+      - name: Cache apt debs
+        uses: actions/cache@v4
+        with:
+          path: /var/cache/apt/archives
+          key: ${{ runner.os }}-apt-texlive-v1
+      - uses: actions/cache@v4
         with:
           path: ~/.local/share/tts
           key: ${{ runner.os }}-xtts-v2
-      - uses: actions/cache@v4                      # H6: incremental render cache
+      - uses: actions/cache@v4
         with:
           path: output_shorts
           key: shorts-${{ matrix.orientation }}-${{ github.run_id }}
@@ -131,8 +136,9 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg libcairo2-dev libpango1.0-dev pkg-config \
-            python3-dev texlive texlive-latex-extra texlive-fonts-extra texlive-science dvipng ghostscript
+          sudo apt-get install -y --no-install-recommends \
+            ffmpeg libcairo2-dev libpango1.0-dev pkg-config python3-dev \
+            texlive texlive-latex-extra texlive-fonts-extra texlive-science dvipng ghostscript
       - uses: actions/cache@v4
         with:
           path: ~/.cache/pip
@@ -149,17 +155,9 @@ jobs:
         env:
           ONLY: ${{ inputs.only }}
         run: |
-          CSV="${{ matrix.csv }}"; OR="${{ matrix.orientation }}"
+          CSV="${{ matrix.csv }}"
+          OR="${{ matrix.orientation }}"
           if [ -n "$ONLY" ]; then
-            python batch_runner.py --csv "$CSV" --orientation "$OR" --only "$ONLY" \
-              || python batch_runner.py --csv "$CSV" --only "$ONLY" \
-              || python batch_runner.py --csv "$CSV" --orientation "$OR" \
-              || python batch_runner.py --csv "$CSV"
-          else
-            python batch_runner.py --csv "$CSV" --orientation "$OR" \
-              || python batch_runner.py --csv "$CSV" \
-              || python batch_runner.py
-          fi
             python batch_runner.py --csv "$CSV" --orientation "$OR" --only "$ONLY" \
               || python batch_runner.py --csv "$CSV" --only "$ONLY" \
               || python batch_runner.py --csv "$CSV" --orientation "$OR" \
@@ -186,16 +184,17 @@ jobs:
     permissions: { contents: write }
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - name: Download artifacts for reflection
+        uses: actions/download-artifact@v4
+        continue-on-error: true
         with:
           pattern: "videos-*"
           merge-multiple: true
           path: reflect_out
-          if-no-artifact-found: ignore
       - name: Distill run into THINK.md
         run: |
           python tools/think_loop.py "${{ github.run_number }}" \
-            "${{ needs.generate-validate.result }}" \
+            "gate=${{ needs.generate-validate.result }} render=${{ needs.render.result }}" \
             $(ls reflect_out/logs/*.log 2>/dev/null) || true
       - name: Commit ledger
         run: |
