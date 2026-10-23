@@ -42,6 +42,8 @@
 - #92 PASS 1h55m — first autonomous run; 10/10 both orientations; 105MB+84MB artifacts; warnings = vocab+wordband+manim deprecations → R4,R5,R6,R7. New lesson: schema-commit re-triggered full render → R9,R10.
 - **#103 PREP** — Integrated JEE Advanced analysis (2007-2025) and EdTech research. Added three-engine architecture, trust layer, JEE question generator. → R11,R12,R13.
 
+- #117 gate=success render=skipped 2026-10-23 wall=– sigs=clean
+
 ## 4. Open hypotheses
 - H1 ManimGX (wgpu) hot primitives ≥10× speed. 
 - H2 tts_router (edge drafts / XTTS finals).
