@@ -1,0 +1,7 @@
+cmake_minimum_required(VERSION 3.16)
+project(saem_core CXX)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+add_executable(saemcli main.cpp gen.cpp)
+target_include_directories(saemcli PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+install(TARGETS saemcli RUNTIME DESTINATION bin)
