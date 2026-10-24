@@ -166,3 +166,4 @@ Example for "rolling without slipping":
 #185 gate=failure render=false 2026-10-24 wall=- sigs=clean ci
 #191 gate=failure render=false 2026-10-24 wall=- sigs=clean ci
 #192 gate=failure render=false 2026-10-24 wall=- sigs=clean ci
+#193 gate=failure render=true 2026-10-24 wall=- sigs=clean ci
