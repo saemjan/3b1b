@@ -1,12 +1,16 @@
-// SaemLabs.Qcos.Bridge — the C# layer of the c/c++/c#/python architecture.
-// Corrected: full JsonDocument disposal, read timeout, robust process handling.
+// SaemLabs.Qcos.Bridge — the C# layer of the C/C++/C#/Python architecture.
+//
+// Speaks the same line protocol as saem/core.py and saem_cli:
+// one JSON request per line, one JSON answer per line.
+//
+// The C++ core is the single source of truth. C# is a typed client,
+// never a second kernel.
+
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
-using System.Threading;
-using System.Threading.Tasks;
 
 namespace SaemLabs.Qcos
 {
@@ -16,172 +20,279 @@ namespace SaemLabs.Qcos
         private readonly StreamWriter _in;
         private readonly StreamReader _out;
         private int _id;
-        private readonly object _gate = new object();
-        private bool _disposed;
 
-        // Default timeout for a single call (ms). Increase for heavy quantum / grow ops.
-        public int CallTimeoutMs { get; set; } = 30_000;
-
-        public SaemBridge(string cliPath = null)
+        public SaemBridge(string? cliPath = null)
         {
-            cliPath ??= Path.Combine(FindRoot(), "build", "saem_cli");
-            if (!File.Exists(cliPath) && !cliPath.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
-            {
-                // Windows convenience
-                var exe = cliPath + ".exe";
-                if (File.Exists(exe)) cliPath = exe;
-            }
+            var resolvedCli = ResolveCliPath(cliPath);
 
             var psi = new ProcessStartInfo
             {
-                FileName = cliPath,
+                FileName = resolvedCli,
                 RedirectStandardInput = true,
                 RedirectStandardOutput = true,
-                RedirectStandardError = true,
                 UseShellExecute = false,
-                CreateNoWindow = true,
-                StandardOutputEncoding = System.Text.Encoding.UTF8,
-                StandardInputEncoding = System.Text.Encoding.UTF8
+                CreateNoWindow = true
             };
 
             _proc = Process.Start(psi)
-                ?? throw new InvalidOperationException($"cannot start saem_cli at '{cliPath}'");
+                ?? throw new InvalidOperationException($"cannot start saem_cli at {resolvedCli}");
 
-            _in  = _proc.StandardInput;
+            _in = _proc.StandardInput;
             _out = _proc.StandardOutput;
+            _in.NewLine = "\n";
+        }
+
+        private static bool IsWindows()
+        {
+            return Path.DirectorySeparatorChar == '\\';
         }
 
         private static string FindRoot()
         {
             var dir = new DirectoryInfo(AppContext.BaseDirectory);
-            while (dir != null)
+
+            while (dir != null && !Directory.Exists(Path.Combine(dir.FullName, "core")))
             {
-                if (Directory.Exists(Path.Combine(dir.FullName, "core")))
-                    return dir.FullName;
                 dir = dir.Parent;
             }
-            return Directory.GetCurrentDirectory();
+
+            return dir?.FullName ?? Directory.GetCurrentDirectory();
         }
 
-        /// **Summary:**
-One door call. Throws on ok:false or timeout.
+        private static string ResolveCliPath(string? cliPath)
+        {
+            if (!string.IsNullOrWhiteSpace(cliPath))
+            {
+                if (File.Exists(cliPath))
+                    return cliPath;
+
+                if (IsWindows() && File.Exists(cliPath + ".exe"))
+                    return cliPath + ".exe";
+
+                throw new FileNotFoundException($"saem_cli not found at {cliPath}");
+            }
+
+            var root = FindRoot();
+            var candidates = new List<string>
+            {
+                Path.Combine(root, "build", "saem_cli"),
+                Path.Combine(root, "build", "saem_cli.exe"),
+            };
+
+            foreach (var c in candidates)
+            {
+                if (File.Exists(c))
+                    return c;
+            }
+
+            throw new FileNotFoundException(
+                "saem_cli not found. Run: python3 tools/build.py cli"
+            );
+        }
+
+        private static string FindPython()
+        {
+            var fromEnv = Environment.GetEnvironmentVariable("SAEM_PYTHON");
+            if (!string.IsNullOrWhiteSpace(fromEnv))
+                return fromEnv;
+
+            string[] names = IsWindows()
+                ? new[] { "python", "py", "python3" }
+                : new[] { "python3", "python" };
+
+            foreach (var name in names)
+            {
+                foreach (var dir in (Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator))
+                {
+                    if (string.IsNullOrWhiteSpace(dir))
+                        continue;
+
+                    try
+                    {
+                        var candidate = Path.Combine(dir, name);
+                        if (File.Exists(candidate))
+                            return candidate;
+
+                        if (IsWindows())
+                        {
+                            var candidateExe = candidate + ".exe";
+                            if (File.Exists(candidateExe))
+                                return candidateExe;
+                        }
+                    }
+                    catch
+                    {
+                        // Ignore malformed PATH entries.
+                    }
+                }
+            }
+
+            throw new FileNotFoundException("python3/python not found; set SAEM_PYTHON");
+        }
+
+        /// <summary>
+        /// One door call. Throws on ok:false.
+        /// </summary>
         public JsonElement Call(string method, string argsJson = "{}")
         {
-            if (_disposed) throw new ObjectDisposedException(nameof(SaemBridge));
+            _id += 1;
 
-            lock (_gate)
+            using var argsDoc = JsonDocument.Parse(argsJson);
+
+            var request = new Dictionary<string, object>
             {
-                _id += 1;
-                int thisId = _id;
+                ["id"] = _id,
+                ["method"] = method,
+                ["args"] = argsDoc.RootElement
+            };
 
-                // Properly dispose the temporary document
-                JsonElement argsElement;
-                using (var doc = JsonDocument.Parse(string.IsNullOrWhiteSpace(argsJson) ? "{}" : argsJson))
-                {
-                    argsElement = doc.RootElement.Clone();
-                }
+            var req = JsonSerializer.Serialize(request);
 
-                var req = JsonSerializer.Serialize(new Dictionary<string, object>
-                {
-                    ["id"]     = thisId,
-                    ["method"] = method,
-                    ["args"]   = argsElement
-                });
+            _in.WriteLine(req);
+            _in.Flush();
 
-                _in.WriteLine(req);
-                _in.Flush();
+            var line = _out.ReadLine();
+            if (line == null)
+                throw new EndOfStreamException("core closed the door");
 
-                // Read with timeout so the bridge never hangs forever
-                string line = null;
-                var readTask = Task.Run(() => _out.ReadLine());
-                if (readTask.Wait(CallTimeoutMs))
-                    line = readTask.Result;
-                else
-                    throw new TimeoutException($"saem_cli did not answer within {CallTimeoutMs} ms (method={method})");
+            using var doc = JsonDocument.Parse(line);
+            var root = doc.RootElement;
 
-                if (line == null)
-                    throw new EndOfStreamException("core closed the door");
-
-                using var resDoc = JsonDocument.Parse(line);
-                var root = resDoc.RootElement;
-
-                if (!root.TryGetProperty("id", out var idProp) || idProp.GetInt32() != thisId)
+            if (root.TryGetProperty("id", out var idProp))
+            {
+                if (idProp.GetInt32() != _id)
                     throw new InvalidOperationException("core answered a different question");
-
-                if (!root.TryGetProperty("ok", out var okProp) || !okProp.GetBoolean())
-                {
-                    string err = root.TryGetProperty("error", out var e) ? e.GetString() : "unknown error";
-                    throw new InvalidOperationException(err ?? "ok:false");
-                }
-
-                return root.GetProperty("result").Clone();
             }
+
+            if (!root.GetProperty("ok").GetBoolean())
+            {
+                var err = root.TryGetProperty("error", out var e)
+                    ? e.GetString() ?? "unknown error"
+                    : "unknown error";
+
+                throw new InvalidOperationException(err);
+            }
+
+            return root.GetProperty("result").Clone();
         }
 
         public JsonElement Boot() => Call("qcos.boot");
 
         public JsonElement Gate(string op, string argsJson = "{}")
         {
-            using var doc = JsonDocument.Parse(string.IsNullOrWhiteSpace(argsJson) ? "{}" : argsJson);
-            var argsObj = JsonSerializer.Serialize(new Dictionary<string, object>
+            using var doc = JsonDocument.Parse(argsJson);
+
+            var args = JsonSerializer.Serialize(new Dictionary<string, object>
             {
-                ["op"]   = op,
-                ["args"] = doc.RootElement.Clone()
+                ["op"] = op,
+                ["args"] = doc.RootElement
             });
-            return Call("qcos.gate", argsObj);
+
+            return Call("qcos.gate", args);
         }
 
         public JsonElement Latch(string key, string valueJson)
         {
-            using var doc = JsonDocument.Parse(string.IsNullOrWhiteSpace(valueJson) ? "null" : valueJson);
-            var argsObj = JsonSerializer.Serialize(new Dictionary<string, object>
+            using var doc = JsonDocument.Parse(valueJson);
+
+            var args = JsonSerializer.Serialize(new Dictionary<string, object>
             {
-                ["key"]   = key,
-                ["value"] = doc.RootElement.Clone()
+                ["key"] = key,
+                ["value"] = doc.RootElement
             });
-            return Call("qcos.latch", argsObj);
+
+            return Call("qcos.latch", args);
         }
 
-        public JsonElement Read(string key) =>
-            Call("qcos.read", JsonSerializer.Serialize(
-                new Dictionary<string, object> { ["key"] = key }));
+        public JsonElement Read(string key)
+        {
+            var args = JsonSerializer.Serialize(new Dictionary<string, object>
+            {
+                ["key"] = key
+            });
 
-        public JsonElement Lower(string intentJson) => Call("qcos.lower", intentJson);
+            return Call("qcos.read", args);
+        }
+
+        public JsonElement Lower(string intentJson)
+        {
+            return Call("qcos.lower", intentJson);
+        }
 
         public JsonElement Exec(string cirJson)
         {
-            using var doc = JsonDocument.Parse(string.IsNullOrWhiteSpace(cirJson) ? "{}" : cirJson);
-            var argsObj = JsonSerializer.Serialize(new Dictionary<string, object>
+            using var doc = JsonDocument.Parse(cirJson);
+
+            var args = JsonSerializer.Serialize(new Dictionary<string, object>
             {
-                ["cir"] = doc.RootElement.Clone()
+                ["cir"] = doc.RootElement
             });
-            return Call("qcos.exec", argsObj);
+
+            return Call("qcos.exec", args);
         }
 
-        public JsonElement Snapshot()    => Call("qcos.snapshot");
-        public JsonElement Provenance()  => Call("qcos.provenance");
+        public JsonElement Snapshot() => Call("qcos.snapshot");
+
+        public JsonElement Provenance() => Call("qcos.provenance");
+
+        /// <summary>
+        /// Level-0 check: the binary's body vs the tree's body.
+        /// </summary>
+        public static string BodyId(string? cliPath = null)
+        {
+            var resolved = ResolveCliPath(cliPath);
+
+            var psi = new ProcessStartInfo
+            {
+                FileName = resolved,
+                Arguments = "--source-id",
+                RedirectStandardOutput = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+
+            using var p = Process.Start(psi)
+                ?? throw new InvalidOperationException($"cannot start {resolved}");
+
+            return p.StandardOutput.ReadToEnd().Trim();
+        }
+
+        public static string TreeId()
+        {
+            var python = FindPython();
+
+            var psi = new ProcessStartInfo
+            {
+                FileName = python,
+                Arguments = "tools/build.py id",
+                WorkingDirectory = FindRoot(),
+                RedirectStandardOutput = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+
+            using var p = Process.Start(psi)
+                ?? throw new InvalidOperationException("cannot start python for tree id");
+
+            return p.StandardOutput.ReadToEnd().Trim();
+        }
 
         public void Dispose()
         {
-            if (_disposed) return;
-            _disposed = true;
             try
             {
-                _in?.Close();
-                if (!_proc.HasExited)
+                _in.Close();
+                if (!_proc.WaitForExit(10000))
                 {
-                    if (!_proc.WaitForExit(5_000))
-                        _proc.Kill(entireProcessTree: true);
+                    _proc.Kill();
                 }
             }
             catch
             {
-                /* the door is already closed */
+                // The door is already closed.
             }
-            finally
-            {
-                _proc?.Dispose();
-            }
+
+            _proc.Dispose();
         }
     }
 }
