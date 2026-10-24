@@ -3,15 +3,6 @@
 
     schema gate -> physics oracle gate -> audio gate (mastered) ->
     render gate (manim) -> visual QA gate -> stitch -> ledger
-
-Every outcome is appended to logs/render_ledger.jsonl (tools.ledger), the
-machine cousin of THINK.md §3. Nothing ships that a gate rejected when the
-matching --require-* flag is set; without the flag the gate warns only.
-
-Usage:
-    python3 batch_runner.py [--csv content_batch.csv] [--only ID[,ID...]]
-        [--chunk N --total-chunks M] [--draft] [--retries K] [--dry-run]
-        [--require-oracle] [--require-qa] [--format short|lecture|all]
 """
 import argparse
 import json
@@ -35,10 +26,8 @@ MEDIA = ROOT / "media"
 JOBS = ROOT / "temp_jobs"
 REPORTS = ROOT / "logs" / "reports"
 
-
 def log(msg):
     print(msg, flush=True)
-
 
 def parse_args():
     p = argparse.ArgumentParser(description="Saem batch runner with gates")
@@ -53,7 +42,6 @@ def parse_args():
     p.add_argument("--require-qa", action="store_true")
     p.add_argument("--format", choices=["short", "lecture", "all"], default="all")
     return p.parse_args()
-
 
 def select_rows(args):
     header, rows = schema_validator.read_rows(ROOT / args.csv if not
@@ -74,7 +62,6 @@ def select_rows(args):
                                     else not is_short(r))]
     return header, rows
 
-
 def render_row(row, audio, args):
     """Run manim on the row's job file. Returns (mp4_path, report)."""
     JOBS.mkdir(parents=True, exist_ok=True)
@@ -82,10 +69,15 @@ def render_row(row, audio, args):
     job_path = JOBS / f"{row['video_id']}.json"
     report_path = REPORTS / f"{row['video_id']}.json"
     orient = row.get("orientation", "vertical")
+    
+    # Fixed: Tuple unpacking ValueError
     if args.draft:
-        res, fps = ("854", "480", "15") if orient == "horizontal" else ("480", "854", "15")
+        res = ("854", "480") if orient == "horizontal" else ("480", "854")
+        fps = "15"
     else:
-        res, fps = ("1920", "1080", "30") if orient == "horizontal" else ("1080", "1920", "30")
+        res = ("1920", "1080") if orient == "horizontal" else ("1080", "1920")
+        fps = "30"
+        
     job = {
         "row": row,
         "audio_voice": str(audio["voice"]),
@@ -100,9 +92,11 @@ def render_row(row, audio, args):
     scene = "Universal3DScene" if row.get("concept_type", "").startswith("3D") \
         else "UniversalPhysicsScene"
     env = dict(os.environ, SAEM_JOB=str(job_path))
+    
+    # Fixed: Simplified resolution string since res is guaranteed to be a tuple
     cmd = [sys.executable, "-m", "manim",
            "--media_dir", str(MEDIA),
-           "--resolution", f"{res[0] if isinstance(res, tuple) else res},{res[1] if isinstance(res, tuple) else res[1]}",
+           "--resolution", f"{res[0]},{res[1]}",
            "--fps", fps, "--disable_caching",
            "render_universal.py", scene]
     proc = subprocess.run(cmd, cwd=ROOT, env=env,
@@ -118,7 +112,6 @@ def render_row(row, audio, args):
     if report_path.exists():
         report = json.loads(report_path.read_text(encoding="utf-8"))
     return cands[-1], report
-
 
 def stitch(row, silent_mp4, audio, out_mp4):
     out_mp4.parent.mkdir(parents=True, exist_ok=True)
@@ -138,13 +131,11 @@ def stitch(row, silent_mp4, audio, out_mp4):
     ]
     subprocess.run(cmd, check=True)
 
-
 def process_row(row, args):
     vid = row.get("video_id", "<no id>")
     t0 = time.time()
     entry = {"video_id": vid, "status": "error"}
     try:
-        # Gate 1: physics oracle
         ok, violations = oracle_validate(row)
         if not ok:
             log(f"[oracle] {vid}: {len(violations)} violation(s)")
@@ -153,20 +144,21 @@ def process_row(row, args):
             if args.require_oracle:
                 entry.update(error="oracle", failed_primitives=violations)
                 return entry
-        # Gate 2: audio (mastered)
+                
         voice = generate_audio.TEMP / f"{vid}_voice.wav"
         pad = generate_audio.TEMP / f"{vid}_pad.wav"
         audio_info = generate_audio.synthesize(row, voice, pad)
         audio = {"voice": voice, "pad": pad, "duration": audio_info["duration"]}
         log(f"[audio] {vid}: {audio_info['duration']:.1f}s "
             f"lufs={audio_info['lufs']} mastered={audio_info['mastered']}")
+            
         if args.dry_run:
             entry.update(status="dry-run", duration_sec=audio_info["duration"],
                          audio_lufs=audio_info["lufs"])
             return entry
-        # Gate 3: render
+            
         silent_mp4, report = render_row(row, audio, args)
-        # Gate 4: visual QA
+        
         final = OUTPUT / f"{vid}_final.mp4"
         stitch(row, silent_mp4, audio, final)
         qa_ok, qa_issues = check_video(final)
@@ -175,6 +167,7 @@ def process_row(row, args):
             if args.require_qa:
                 entry.update(error="visual_qa", issues=qa_issues)
                 return entry
+                
         entry.update(
             status="ok",
             duration_sec=audio_info["duration"],
@@ -190,7 +183,6 @@ def process_row(row, args):
         entry.update(error=str(e)[:300], wall_sec=round(time.time() - t0, 1))
         log(f"[error] {vid}: {e}")
     return entry
-
 
 def main():
     args = parse_args()
@@ -219,7 +211,6 @@ def main():
         if r.get("status") != "ok":
             log(f"  failed: {r.get('video_id')}: {r.get('error', r.get('status'))}")
     return 0 if ok == len(results) else 1
-
 
 if __name__ == "__main__":
     sys.exit(main())
