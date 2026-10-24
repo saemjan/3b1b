@@ -4,6 +4,7 @@
 // the seeded random stream, the 32-bit hash, Math.round,
 // and Map iteration order.
 #pragma once
+#include <sstream>
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
