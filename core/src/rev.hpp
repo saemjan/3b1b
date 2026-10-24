@@ -44,10 +44,11 @@ inline void run(Bits& b, const std::vector<Gate>& p, bool backwards = false) {
 // Bennett: prog computes f(inputs) into bit `out`, leaving garbage.
 // Copy out with a CNOT, run prog in reverse; inputs and garbage return
 // home and only the clean copy remains.
+// around line 50
 inline void compute_copy_uncompute(Bits& b, const std::vector<Gate>& prog,
                                    uint8_t out, uint8_t dest) {
   run(b, prog);
-  apply(b, gcnot(out, dest));
+  saem::apply(b, gcnot(out, dest));   // ← qualify it
   run(b, prog, true);
 }
 
