@@ -1,12 +1,13 @@
 // The registry, the JSON text wrapper, the C door (saem_call), and the
 // Math Brain's methods.
-// v2 (after run #172): binds ONLY to symbols this repository's gen.hpp
-// actually exports (make/question_with return a Question struct; the bank
-// method is gen::bank; there is no gen::fmt/hash32/question_json here).
-// Question serialization, 4-sig-fig formatting and the 32-bit hash are
-// provided locally so the door never depends on absent symbols. A lambda
-// that cannot compile poisons every Registrar call behind it, so this file
-// keeps every handler body minimal and self-contained.
+//
+// v3 (after run #176): THIS repository's gen.hpp is JSON-native.
+//   - gen::make          returns saem::Json            (no Question struct)
+//   - gen::question_with takes  (id, seed, params)     (seed before params)
+//   - gen::solve / bank / topics / templates / vectors all return saem::Json
+// The door therefore passes Json straight through: no local serializer,
+// no struct fields, no cascade. fmt4 / hash32 stay local because the
+// body does not export them. The registry and C door are untouched.
 #include "api.hpp"
 
 #include <algorithm>
@@ -71,33 +72,12 @@ std::vector<std::string> methods() {
   return v;  // std::map keeps them sorted
 }
 
-// ---------- local helpers: the pieces gen.hpp does not export ----------
+// ---------- local helpers: symbols this gen.hpp does not export --------
 namespace {
 
 uint32_t seed_of(const Json& a, uint32_t dflt) {
   if (!a.has("seed") || !a["seed"].isNum()) return dflt;
   return static_cast<uint32_t>(static_cast<int64_t>(a["seed"].asNum()));
-}
-
-// Question -> Json, serialized here because this gen.hpp has no
-// question_json. Field order is the contract; do not reorder.
-Json qjson(const gen::Question& q) {
-  Json o = Json::object();
-  o.set("text", q.text);
-  o.set("answer", q.answer);
-  o.set("explanation", q.explanation);
-  o.set("topic", q.topic);
-  o.set("gen", q.gen);
-  o.set("src", q.src);
-  Json opts = Json::array();
-  for (const gen::Option& op : q.options) {
-    Json e = Json::object();
-    e.set("key", op.key);
-    e.set("text", op.text);
-    opts.push(e);
-  }
-  o.set("options", opts);
-  return o;
 }
 
 // Superscript digits for the x10^n form (GEN.fmt mirror).
@@ -135,12 +115,12 @@ uint32_t hash32(const std::string& s) {
   return h;
 }
 
-// ---------- Math Brain, bound to THIS gen.hpp ----------
+// ---------- Math Brain, bound to THIS gen.hpp (JSON-native) ----------
 const Registrar g1("gen.make", [](const Json& a) {
-  return qjson(gen::make(a["id"].asStr(), seed_of(a, 1)));
+  return gen::make(a["id"].asStr(), seed_of(a, 1));
 });
 const Registrar g2("gen.questionWith", [](const Json& a) {
-  return qjson(gen::question_with(a["id"].asStr(), a["params"], seed_of(a, 1)));
+  return gen::question_with(a["id"].asStr(), seed_of(a, 1), a["params"]);
 });
 const Registrar g3("gen.solve", [](const Json& a) {
   return gen::solve(a["id"].asStr(), a["params"]);
