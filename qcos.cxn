@@ -1,0 +1,89 @@
+# qcos.cxn — ONE CANON, FOUR TONGUES.
+# This file is the constitutional root of all cross-language
+# communication. Types, argument ORDER, defaults and validation are
+# declared here exactly once and compiled into every binding.
+# Editing a generated .g.* file is a violation; edit this instead.
+
+@core "0.4.0"
+
+@article A0 "every answer is computed from the numbers in the question, never guessed"
+@article A1 "every number leaving the core prints exactly as the reference engine prints it"
+@article A2 "the door holds no hidden state; state travels in the JSON, in the caller's ledger"
+@article A3 "measurement and overwrite are the only irreversible acts; the core reports the debt"
+@article A4 "no belief is declared without Bernoulli's bar of moral certainty, 1000:1"
+@article A5 "the ledger is append-only; rules without machine checks remain hypotheses"
+@article A6 "the JavaScript bridge is a ruler, never a fallback"
+
+@cap MAXP        0.95
+@cap MAX_NUDGE   0.15
+@cap CAP_ATTEMPTS 3
+@cap KEEP_DETAIL  50
+@cap MAX_FACULTY  4
+@cap WORKING_LIMIT 32
+@cap EPISODIC_LIMIT 64
+@cap KEY_MAX 23
+@cap CIR_STEPS 4096
+
+# ---- types ----------------------------------------------------------
+@type Key     string  max 23
+@type Prob    number  finite
+@type Seed    uint32
+@type Any     any
+
+@struct LatchResult { ok : bool  hash : string }
+@struct ReadResult  { found : bool  value : Any }
+@struct ExecResult  { ok : bool  hash : string  trace : Any }
+
+# ---- Math Brain -----------------------------------------------------
+@method gen.make {
+  in  id    : string  required
+  in  seed  : Seed    = 1
+  out Any
+} pure
+  cpp "gen::question_json(gen::make(a[\"id\"].asStr(), Rng(seed)))"
+  js  "GEN.questionWith(id, {}, seed)"
+
+@method gen.questionWith {
+  in  id     : string  required
+  in  seed   : Seed    = 1
+  in  params : Any     required
+  out Any
+} pure
+  cpp "gen::question_json(gen::question_with(a[\"id\"].asStr(), seed, a[\"params\"]))"
+  js  "GEN.questionWith(id, params, seed)"
+
+@method gen.solve {
+  in  id     : string  required
+  in  params : Any     required
+  out Any
+} pure
+  cpp "gen::solve(a[\"id\"].asStr(), a[\"params\"])"
+  js  "GEN.solve(id, params)"
+
+@method gen.format {
+  in  x : number  required  finite
+  out string
+} pure
+  cpp "Json(gen::fmt(a[\"x\"].asNum()))"
+  js  "GEN.fmt(x)"
+
+# ---- QCOS kernel ----------------------------------------------------
+@method qcos.latch {
+  in  key   : Key     required
+  in  value : Any     required
+  out LatchResult
+} resident
+  cpp "qcos_api::latch(a)"
+
+@method qcos.exec {
+  in  cir : Any  required
+  out ExecResult
+} resident
+  cpp "qcos_api::exec(a)"
+
+@method qcos.gate {
+  in  op   : string  required
+  in  args : Any     = {}
+  out Any
+} gate
+  cpp "qcos_api::gate(a)"
