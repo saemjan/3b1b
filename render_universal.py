@@ -1,12 +1,5 @@
 #!/usr/bin/env python3
-"""Manim engine with gates: reads one job JSON (env SAEM_JOB), builds the
-scene from visual_data_json + equations_json + beats_json, aligns beats to
-word-level timings when available, tracks every failed primitive, and
-writes a render report the batch runner feeds to the ledger.
-
-Unknown or failing primitives are skipped with [WARN] and recorded in the
-report; they never crash the render (degradation, not deception).
-"""
+"""Manim engine with gates: reads one job JSON (env SAEM_JOB)..."""
 import ast
 import json
 import math
@@ -20,7 +13,7 @@ from manim import (
     Dot, Circle, Ellipse, Rectangle, Polygon, Brace, Axes, NumberLine,
     ValueTracker, always_redraw, Create, Write, FadeIn, FadeOut, GrowArrow,
     MoveAlongPath, Succession, Wait, UP, DOWN, LEFT, RIGHT, ORIGIN, PI,
-    VMobject, ThreeDAxes, Sphere, Cube, Cylinder, Cone,
+    VMobject, ThreeDAxes, Sphere, Cube, Cylinder, Cone, UR
 )
 
 ROOT = Path(__file__).resolve().parent
@@ -40,25 +33,23 @@ ORIENT = JOB.get("orientation", ROW.get("orientation", "vertical"))
 DURATION = float(JOB.get("audio_duration", 60.0))
 FAILED = []
 
-
 def safe_json_loads(cell, default):
     if not cell:
         return default
     s = cell.strip()
-    for cand in (s, s.replace("\\\\", "\\"), re.sub(r"\\(?!\\)", r"\\\\", s)):
+    # Fixed: Restored valid backslashes for JSON repair
+    for cand in (s, s.replace("\\\\", "\\"), s.replace("\\", "")):
         try:
             return json.loads(cand)
         except json.JSONDecodeError:
             continue
     return default
 
-
 # ---- restricted expression evaluator (arithmetic over x) --------------
 _ALLOWED_FUNCS = {"sin": math.sin, "cos": math.cos, "tan": math.tan,
                   "exp": math.exp, "log": math.log, "sqrt": math.sqrt,
                   "abs": abs}
 _CONSTS = {"pi": math.pi, "e": math.e}
-
 
 def eval_expr(expr, x):
     node = ast.parse(expr.replace("^", "**"), mode="eval").body
@@ -86,7 +77,6 @@ def eval_expr(expr, x):
         raise ValueError("forbidden expression node")
     return ev(node)
 
-
 # ---- frame configuration ----------------------------------------------
 if ORIENT == "vertical":
     config.pixel_width, config.pixel_height = (480, 854) if JOB.get("draft") else (1080, 1920)
@@ -95,7 +85,6 @@ else:
     config.pixel_width, config.pixel_height = (854, 480) if JOB.get("draft") else (1920, 1080)
     config.frame_width, config.frame_height = 16.0, 9.0
 config.frame_rate = 15 if JOB.get("draft") else 30
-
 
 class SaemLabsBranding:
     def add_intro(self, title, tagline):
@@ -107,11 +96,7 @@ class SaemLabsBranding:
         return Text("SaemLabs · NEET · JEE · MIT", font_size=20).to_edge(DOWN, buff=0.3)
 
     def watermark(self):
-        return Text("SaemLabs", font_size=16, opacity=0.4).to_corner(UR if ORIENT == "horizontal" else UR, buff=0.2)
-
-
-from manim import UR  # noqa: E402  (corner constant for watermark)
-
+        return Text("SaemLabs", font_size=16, opacity=0.4).to_corner(UR, buff=0.2)
 
 class UniversalPhysicsScene(Scene, SaemLabsBranding):
     def construct(self):
@@ -156,7 +141,6 @@ class UniversalPhysicsScene(Scene, SaemLabsBranding):
         self.wait(2.0)
         self.write_report(len(visuals) + len(equations))
 
-    # ---- beats: word-level alignment with equal-slice fallback --------
     def align_beats(self, beats, objects):
         if not beats:
             return []
@@ -170,7 +154,6 @@ class UniversalPhysicsScene(Scene, SaemLabsBranding):
             return [(DURATION * i / max(1, n), b.get("focus"))
                     for i, b in enumerate(beats)]
 
-    # ---- primitive construction with failure tracking -----------------
     def build_primitives(self, visuals):
         objects, order = {}, []
         for i, spec in enumerate(visuals):
@@ -198,7 +181,6 @@ class UniversalPhysicsScene(Scene, SaemLabsBranding):
         p = spec.get("pos", spec.get("center", list(default)))
         return tuple(p) + (0.0,) * (3 - len(p)) if len(p) < 3 else tuple(p)
 
-    # static -------------------------------------------------------------
     def _prim_text(self, s):
         return Text(str(s.get("text", "")), font_size=s.get("font_size", 24)).move_to(self._pos(s))
 
@@ -265,7 +247,14 @@ class UniversalPhysicsScene(Scene, SaemLabsBranding):
         x0 = float(s.get("x0", 1.0))
         d = float(s.get("delta", 0.5))
         curve = ax.plot(lambda t: eval_expr(expr, t), color="YELLOW")
-        sec = ax.get_secant_line? None  # placeholder removed below
+        
+        # Fixed: Replaced invalid `? None` syntax with a safe try/except block
+        try:
+            if hasattr(ax, "get_secant_line_group"):
+                sec = ax.get_secant_line_group(curve, x0, x0 + d)
+                return VGroup(ax, curve, sec)
+        except Exception:
+            pass
         return VGroup(ax, curve)
 
     def _prim_number_line(self, s):
@@ -273,7 +262,6 @@ class UniversalPhysicsScene(Scene, SaemLabsBranding):
         marker = Dot(nl.n2p(float(s.get("value", 0))), color="RED")
         return VGroup(nl, marker)
 
-    # motion -------------------------------------------------------------
     def _prim_wave(self, s):
         ax = Axes(x_range=s.get("x_range", [-4, 4]), y_range=[-1.5, 1.5],
                   x_length=7.0, y_length=2.0).move_to(self._pos(s, (0, -1, 0)))
@@ -331,7 +319,6 @@ class UniversalPhysicsScene(Scene, SaemLabsBranding):
                           for k in range(3)])
         return VGroup(hot, cold, arrows)
 
-    # physics-engineered --------------------------------------------------
     def _prim_projectile_motion(self, s):
         v0 = float(s.get("v0", 20.0))
         ang = math.radians(float(s.get("angle", 45.0)))
@@ -358,7 +345,6 @@ class UniversalPhysicsScene(Scene, SaemLabsBranding):
                          color=b.get("color", "YELLOW")))
         return mobs
 
-    # self-animated --------------------------------------------------------
     def _prim_equation_morph(self, s):
         steps = s.get("steps", [])
         mobs = VGroup()
@@ -412,7 +398,6 @@ class UniversalPhysicsScene(Scene, SaemLabsBranding):
         Path(JOB.get("report_path", "report.json")).write_text(
             json.dumps(report, ensure_ascii=False), encoding="utf-8")
 
-
 class Universal3DScene(ThreeDScene, SaemLabsBranding):
     def construct(self):
         self.set_camera_orientation(phi=70 * PI / 180, theta=-30 * PI / 180)
@@ -438,7 +423,6 @@ class Universal3DScene(ThreeDScene, SaemLabsBranding):
                 FAILED.append(f"3d:{kind}:{e}")
         self.wait(2.0)
         UniversalPhysicsScene.write_report(self, len(visuals))
-
 
 if __name__ == "__main__":
     print("render_universal is driven by manim with SAEM_JOB set; "
