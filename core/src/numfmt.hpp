@@ -10,13 +10,13 @@ namespace saem {
 
 inline double parse_double(const std::string& s) {
   size_t b = s.find_first_not_of(" \t\n\r\f\v");
-  if (b == std::string::npos) return 0;
+  if (b == std::string::npos) return 0.0;
   size_t e = s.find_last_not_of(" \t\n\r\f\v");
+  if (e == std::string::npos) return 0.0;
   const char* p = s.c_str() + b;
-  const char* end = s.c_str() + e + 1;
   char* stop = nullptr;
   double v = std::strtod(p, &stop);
-  if (stop == p) return 0;
+  if (stop == p) return 0.0;
   return v;
 }
 
@@ -42,7 +42,7 @@ inline std::string jsnum(double x) {
   if (std::isinf(x)) return x < 0 ? "-Infinity" : "Infinity";
   bool neg = x < 0;
   if (neg) x = -x;
-  if (x == 0) return "0";
+  if (x == 0.0) return "0";
   std::string d;
   int n;
   shortest_digits(x, d, n);
@@ -64,10 +64,9 @@ inline std::string jsnum(double x) {
   return neg ? "-" + out : out;
 }
 
-// toPrecision(p): p significant digits. Ties round away from zero
-// (JS behaviour for the common half-up cases used by the ruler).
+// toPrecision(p): p significant digits.
 inline std::string round_sig(double x, int p) {
-  if (x == 0 || !std::isfinite(x) || p < 1) return jsnum(x);
+  if (x == 0.0 || !std::isfinite(x) || p < 1) return jsnum(x);
   bool neg = x < 0;
   if (neg) x = -x;
 
@@ -90,8 +89,7 @@ inline std::string round_sig(double x, int p) {
     d += std::string(static_cast<size_t>(p) - d.size(), '0');
   }
 
-  // Reconstruct the value from the rounded digit string and re-emit via jsnum
-  // so layout (decimal point / scientific) is always consistent with A1.
+  // Reconstruct value from rounded digits and re-emit via jsnum (A1).
   double v = 0.0;
   for (char c : d) v = v * 10.0 + (c - '0');
   double val = v * std::pow(10.0, n - static_cast<int>(d.size()));
