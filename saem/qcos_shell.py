@@ -6,13 +6,6 @@ the line protocol, and keeps the L3 ledger on disk: an append-only record
 of every latch/exec with wall-clock time, plus periodic snapshots. The
 ledger is the machine cousin of THINK.md §3 -- replay it and the session
 returns exactly.
-
-    python3 -m saem.qcos_shell boot
-    python3 -m saem.qcos_shell latch mass '{"m": 2.0}'
-    python3 -m saem.qcos_shell lower '{"want":"combine","a":"mass","b":"h","dst":"e"}'
-    python3 -m saem.qcos_shell exec '{"steps":[...]}'
-    python3 -m saem.qcos_shell provenance
-    python3 -m saem.qcos_shell replay
 """
 import argparse
 import json
@@ -25,7 +18,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 CLI = ROOT / "build" / "saem_cli"
 LEDGER = ROOT / "logs" / "qcos_ledger.jsonl"
-
 
 class Qcos:
     """One saem_cli process = one OS session."""
@@ -48,7 +40,18 @@ class Qcos:
         if env.get("id") != self._id:
             raise SystemExit("core answered a different question")
         if not env.get("ok"):
-            raise ValueError(env.get("error", "unknown failure"))
+            err = env.get("error", "unknown failure")
+            # A3: Measurement and overwrite are the only irreversible acts; the core reports the debt.
+            # If the C++ core encountered an unhandled exception or OOM, it is an irreversible thermodynamic event.
+            # We log this debt to the Landauer Ledger before failing the shell command.
+            if err in ("LANDAUER_DEBT_OOM", "UNKNOWN_FAILURE_DEBT"):
+                log_append({
+                    "op": "landauer_debt", 
+                    "method": method, 
+                    "error": err, 
+                    "detail": env.get("detail", "unhandled C++ exception")
+                })
+            raise ValueError(err)
         return env["result"]
 
     def close(self):
@@ -65,14 +68,12 @@ class Qcos:
         self.close()
         return False
 
-
 def log_append(entry):
     LEDGER.parent.mkdir(parents=True, exist_ok=True)
     entry["wall"] = time.time()
     entry["iso"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(entry["wall"]))
     with open(LEDGER, "a", encoding="utf-8") as f:
         f.write(json.dumps(entry, ensure_ascii=False) + "\n")
-
 
 def log_read():
     if not LEDGER.exists():
@@ -85,14 +86,12 @@ def log_read():
                 out.append(json.loads(line))
     return out
 
-
 def cmd_boot(q):
     r = q.call("qcos.boot")
     print(json.dumps(r, indent=2))
     log_append({"op": "boot", "self_ok": r["self"]["ok"],
                 "constitution": r["constitution"]})
     return 0 if r["self"]["ok"] else 1
-
 
 def cmd_latch(q, key, value_json):
     r = q.call("qcos.latch", key=key, value=json.loads(value_json))
@@ -101,18 +100,15 @@ def cmd_latch(q, key, value_json):
     print(json.dumps(r))
     return 0 if r["ok"] else 1
 
-
 def cmd_read(q, key):
     print(json.dumps(q.call("qcos.read", key=key)))
     return 0
-
 
 def cmd_lower(q, intent_json):
     r = q.call("qcos.lower", **json.loads(intent_json))
     print(json.dumps(r, indent=2))
     log_append({"op": "lower", "cir": r["cir"]})
     return 0
-
 
 def cmd_exec(q, cir_json):
     r = q.call("qcos.exec", cir=json.loads(cir_json))
@@ -121,19 +117,16 @@ def cmd_exec(q, cir_json):
     print(json.dumps(r, indent=2))
     return 0 if r["ok"] else 1
 
-
 def cmd_provenance(q):
     r = q.call("qcos.provenance")
     print(json.dumps(r, indent=2))
     return 0 if r["verify"] else 1
-
 
 def cmd_snapshot(q):
     r = q.call("qcos.snapshot")
     log_append({"op": "snapshot", "working": r["working"], "prov": r["prov"]})
     print(json.dumps(r, indent=2))
     return 0
-
 
 def cmd_replay(q):
     """Re-apply every latch in the ledger to a fresh session and compare."""
@@ -153,7 +146,6 @@ def cmd_replay(q):
             return 1
     print(f"[replay] ok: {len(entries)} latches reproduced")
     return 0
-
 
 def main():
     ap = argparse.ArgumentParser(description="QCOS shell")
@@ -180,7 +172,6 @@ def main():
         if a.cmd == "replay":
             return cmd_replay(q)
     return 1
-
 
 if __name__ == "__main__":
     sys.exit(main())
