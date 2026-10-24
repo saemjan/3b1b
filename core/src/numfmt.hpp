@@ -12,10 +12,17 @@ namespace saem {
 inline double parse_double(const std::string& s) {
   size_t b = s.find_first_not_of(" \t\n\r\f\v");
   if (b == std::string::npos) return 0;
-  size_t e = s.find_last_not_of(" \t\n\r\f\v") + 1;
-  const char* pb = s.c_str() + b;
-  char* end = nullptr;
-  return std::strtod(pb, &end);
+  size_t e = s.find_last_not_of(" \t\n\r\f\v");
+  const char* p = s.c_str() + b;
+  const char* end = s.c_str() + e + 1;
+  double v = 0;
+#if defined(__cpp_lib_to_chars) && __cpp_lib_to_chars >= 201611L
+  auto r = std::from_chars(p, end, v);
+  if (r.ec == std::errc()) return v;
+  return 0;                       // never guess: unparseable -> 0, reported upstream
+#else
+  return std::strtod(p, nullptr); // fallback (still locale risk; prefer from_chars)
+#endif
 }
 
 // Shortest decimal digits that read back as exactly x, as 0.DIGITS x 10^n10.
