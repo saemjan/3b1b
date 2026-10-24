@@ -11,6 +11,18 @@ Commands:
   python core_processor.py verify --csv content/master_horizontal.csv
   python core_processor.py codex "log line"
 """
+import sys
+import os
+
+# Fix the silent trust layer import failure (README §14 / §17)
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'tools'))
+try:
+    from trust_layer import TrustLayer
+    TRUST_AVAILABLE = True
+except ImportError:
+    TRUST_AVAILABLE = False
+    print("[trust] WARNING: trust_layer.py not found in tools/. Hallucination checks disabled.")
+  
 import csv, json, subprocess, sys, argparse
 from pathlib import Path
 
