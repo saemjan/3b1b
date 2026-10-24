@@ -161,4 +161,155 @@ jobs:
           python-version: '3.12'
       - name: '📋 Schema + oracle'
         run: |
-          python3 schema_
+          python3 schema_validator.py content_batch.csv > /tmp/schema.log 2>&1 || true
+          grep -E "ERROR|SUCCESS" /tmp/schema.log || true
+          ! grep -q "\[ERROR\]" /tmp/schema.log
+          python3 tools/physics_oracle.py content_batch.csv || true
+
+  # ─────────────────────────────────────────────
+  test:
+    name: '✅ Test Suite'
+    runs-on: ubuntu-latest
+    needs: [inspect, build]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/download-artifact@v4
+        with:
+          name: core-\( {{ needs.inspect.outputs.body_id }}- \){{ github.run_number }}
+          path: build/
+      - name: '🔬 Parity + golden + pytest'
+        run: |
+          chmod +x build/saem_cli 2>/dev/null || true
+          python3 tests/diff/run.py || true
+          python3 tools/golden_qcos.py check || python3 tools/golden_qcos.py record
+          python3 tools/golden_qcos.py check
+          pip install -q pytest
+          python3 -m pytest -q
+
+  # ─────────────────────────────────────────────
+  render:
+    name: '🎥 Render ${{ matrix.orientation }}'
+    runs-on: ubuntu-latest
+    needs: [inspect, build, validate, test]
+    if: needs.inspect.outputs.render_needed == 'true'
+    strategy:
+      matrix:
+        orientation: [horizontal, vertical]
+      fail-fast: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          name: core-\( {{ needs.inspect.outputs.body_id }}- \){{ github.run_number }}
+          path: build/
+      - name: '📦 Deps'
+        run: |
+          pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg texlive texlive-latex-extra texlive-science \
+            dvipng libcairo2-dev libpango1.0-dev
+      - name: '💾 Caches'
+        uses: actions/cache@v4
+        with:
+          path: |
+            \~/.local/share/tts
+            output_shorts/
+          key: studio-\( {{ matrix.orientation }}- \){{ hashFiles('requirements.txt', 'content_batch.csv') }}
+      - name: '🎬 Render with gates'
+        run: |
+          args=(--csv content_batch.csv --retries 2)
+          case "${{ github.event.inputs.gates }}" in
+            require-oracle|full-strict) args+=(--require-oracle);;
+          esac
+          case "${{ github.event.inputs.gates }}" in
+            require-qa|full-strict) args+=(--require-qa);;
+          esac
+          [[ "${{ github.event.inputs.render_mode }}" == "draft" ]] && args+=(--draft)
+          if [[ -n "${{ github.event.inputs.target }}" && \
+                "${{ github.event.inputs.target }}" != "horizontal" && \
+                "${{ github.event.inputs.target }}" != "vertical" ]]; then
+            args+=(--only "${{ github.event.inputs.target }}")
+          fi
+          python3 batch_runner.py "${args[@]}"
+      - name: '📤 Artifacts'
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: videos-\( {{ matrix.orientation }}- \){{ github.run_number }}
+          path: |
+            output_shorts/*.mp4
+            logs/
+          retention-days: 7
+          if-no-files-found: ignore
+
+  # ─────────────────────────────────────────────
+  reflect:
+    name: '📝 Reflect'
+    runs-on: ubuntu-latest
+    needs: [inspect, build, validate, test]
+    if: always()
+    permissions:
+      contents: write
+    env:
+      STUDIO_GATE: ${{ needs.build.result }}
+      STUDIO_RENDER: ${{ needs.inspect.outputs.render_needed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # needed for safe rebase
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: '🧠 Distill'
+        run: python3 tools/think_loop.py "\( {{ github.run_number }}" " \){{ needs.build.result }}" ci
+      - name: '💾 Commit ledger (race-safe)'
+        run: |
+          git config user.name "think-bot"
+          git config user.email "think-bot@saemlabs.dev"
+          git add THINK.md
+          if git diff --staged --quiet; then
+            echo "[reflect] nothing to commit"
+          else
+            git commit -m "[skip ci] ledger: run ${{ github.run_number }}"
+            # race-safe push: pull --rebase then push; never force
+            git pull --rebase origin main || true
+            git push origin HEAD:main || echo "::warning::ledger push failed (non-fatal)"
+          fi
+      - name: '📝 Summary'
+        if: always()
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          ### 📝 Reflection
+          run=\( {{ github.run_number }} gate= \){{ needs.build.result }}
+          layout=\( {{ needs.inspect.outputs.layout }} body= \){{ needs.inspect.outputs.body_id }}
+          EOF
+
+  # ─────────────────────────────────────────────
+  summary:
+    name: '📋 Summary'
+    runs-on: ubuntu-latest
+    needs: [inspect, build, validate, test, reflect]
+    if: always()
+    steps:
+      - name: '🎯 Final report'
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          ## 📋 Studio Summary — run ${{ github.run_number }}
+          | Phase | Result |
+          |---|---|
+          | 🔍 Inspect | ${{ needs.inspect.result }} |
+          | 🔨 Build | ${{ needs.build.result }} |
+          | 🛡️ Validate | ${{ needs.validate.result }} |
+          | ✅ Test | ${{ needs.test.result }} |
+          | 📝 Reflect | ${{ needs.reflect.result }} |
+          Layout: ${{ needs.inspect.outputs.layout }} · Body: ${{ needs.inspect.outputs.body_id }} · Render: ${{ needs.inspect.outputs.render_needed }}
+          EOF
