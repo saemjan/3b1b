@@ -1,17 +1,15 @@
 // The registry, the JSON text wrapper, the C door (saem_call), and the
 // Math Brain's methods.
 //
-// v4 (after #183): adds argument validation, gen.help introspection,
-// gen.makeBatch for bulk generation, and specific error messages.
-// Still binds to JSON-native gen.hpp: make/question_with return Json,
-// question_with takes (id, seed, params). No util.hpp dependency here;
-// text handlers live in cos_api.cpp.
+// v5 (after #184): adds Landauer debt tracking for irreversible C++ exceptions
+// and OOM events, fulfilling Article A3 of the Constitution.
 #include "api.hpp"
 
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <map>
+#include <new>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -53,14 +51,21 @@ std::string call_json(const std::string& method, const std::string& args_json) {
     Json r = call(method, args);
     out.set("ok", true);
     out.set("result", std::move(r));
+  } catch (const std::bad_alloc& e) {
+    // A3: Memory exhaustion is an irreversible act. The core reports the debt.
+    out = Json::object();
+    out.set("ok", false);
+    out.set("error", "LANDAUER_DEBT_OOM");
+    out.set("detail", std::string(e.what()));
   } catch (const std::exception& e) {
     out = Json::object();
     out.set("ok", false);
     out.set("error", std::string(e.what()));
   } catch (...) {
+    // A3: An unknown C++ crash is an unmeasured thermodynamic erasure.
     out = Json::object();
     out.set("ok", false);
-    out.set("error", "unknown failure");
+    out.set("error", "UNKNOWN_FAILURE_DEBT");
   }
   return out.dump();
 }
@@ -79,7 +84,6 @@ uint32_t seed_of(const Json& a, uint32_t dflt) {
   return static_cast<uint32_t>(static_cast<int64_t>(a["seed"].asNum()));
 }
 
-// Argument validation helpers
 void require_str(const Json& a, const char* key) {
   if (!a.has(key))
     throw std::runtime_error(std::string("missing required field: ") + key);
@@ -101,7 +105,6 @@ void require_obj(const Json& a, const char* key) {
     throw std::runtime_error(std::string("field '") + key + "' must be an object");
 }
 
-// Superscript digits for the x10^n form (GEN.fmt mirror).
 std::string sup_exp(const std::string& digits, bool neg) {
   static const char* SUP[10] = {
     "\xe2\x81\xb0", "\xc2\xb9", "\xc2\xb2", "\xc2\xb3", "\xe2\x81\xb4",
@@ -114,7 +117,6 @@ std::string sup_exp(const std::string& digits, bool neg) {
   return out;
 }
 
-// 4 significant figures, x10^n form for very large or small values.
 std::string fmt4(double x) {
   const std::string s = round_sig(x, 4);
   const size_t e = s.find('e');
@@ -126,7 +128,6 @@ std::string fmt4(double x) {
   return s.substr(0, e) + " \xc3\x97 10" + sup_exp(ex, neg);
 }
 
-// FNV-1a 32-bit: the string hash the reference calls hash32.
 uint32_t hash32(const std::string& s) {
   uint32_t h = 0x811c9dc5u;
   for (unsigned char c : s) {
@@ -136,7 +137,6 @@ uint32_t hash32(const std::string& s) {
   return h;
 }
 
-// Method documentation table
 struct MethodDoc {
   const char* name;
   const char* desc;
@@ -161,36 +161,36 @@ const MethodDoc docs[] = {
 }  // namespace
 
 // ---------- Math Brain (JSON-native, with validation) ----------
-const Registrar g1("gen.make", [](const Json& a) {
+const Registrar g1("gen.make", [](const Json& a) -> Json {
   require_str(a, "id");
   return gen::make(a["id"].asStr(), seed_of(a, 1));
 });
 
-const Registrar g2("gen.questionWith", [](const Json& a) {
+const Registrar g2("gen.questionWith", [](const Json& a) -> Json {
   require_str(a, "id");
   if (!a.has("params") || !a["params"].isObj())
     throw std::runtime_error("field 'params' must be an object");
   return gen::question_with(a["id"].asStr(), seed_of(a, 1), a["params"]);
 });
 
-const Registrar g3("gen.solve", [](const Json& a) {
+const Registrar g3("gen.solve", [](const Json& a) -> Json {
   require_str(a, "id");
   if (!a.has("params") || !a["params"].isObj())
     throw std::runtime_error("field 'params' must be an object");
   return gen::solve(a["id"].asStr(), a["params"]);
 });
 
-const Registrar g4("gen.demoBank", [](const Json& a) {
+const Registrar g4("gen.demoBank", [](const Json& a) -> Json {
   return gen::bank(seed_of(a, 11), a["y0"].asInt(0), a["y1"].asInt(0));
 });
 
-const Registrar g5("gen.topics", [](const Json&) {
+const Registrar g5("gen.topics", [](const Json& a) -> Json {
   Json o = Json::array();
   for (const auto& t : gen::topics()) o.push(t);
   return o;
 });
 
-const Registrar g6("gen.templates", [](const Json&) {
+const Registrar g6("gen.templates", [](const Json& a) -> Json {
   Json o = Json::array();
   for (const auto& t : gen::templates()) {
     Json e = Json::object();
@@ -201,22 +201,21 @@ const Registrar g6("gen.templates", [](const Json&) {
   return o;
 });
 
-const Registrar g7("gen.format", [](const Json& a) {
+const Registrar g7("gen.format", [](const Json& a) -> Json {
   require_num(a, "x");
   return Json(fmt4(a["x"].asNum()));
 });
 
-const Registrar g8("gen.vectors", [](const Json&) {
+const Registrar g8("gen.vectors", [](const Json& a) -> Json {
   return gen::vectors();
 });
 
-const Registrar g9("gen.hash32", [](const Json& a) {
+const Registrar g9("gen.hash32", [](const Json& a) -> Json {
   require_str(a, "s");
   return Json(static_cast<double>(hash32(a["s"].asStr())));
 });
 
-// ---------- New: batch generation ----------
-const Registrar g10("gen.makeBatch", [](const Json& a) {
+const Registrar g10("gen.makeBatch", [](const Json& a) -> Json {
   if (!a.has("items") || !a["items"].isArr())
     throw std::runtime_error("field 'items' must be an array");
   Json results = Json::array();
@@ -249,8 +248,7 @@ const Registrar g10("gen.makeBatch", [](const Json& a) {
   return results;
 });
 
-// ---------- New: introspection ----------
-const Registrar g11("gen.help", [](const Json& a) {
+const Registrar g11("gen.help", [](const Json& a) -> Json {
   if (a.has("method") && a["method"].isStr()) {
     const std::string m = a["method"].asStr();
     for (const MethodDoc* d = docs; d->name; ++d) {
@@ -264,7 +262,6 @@ const Registrar g11("gen.help", [](const Json& a) {
     }
     throw std::runtime_error("unknown method: " + m);
   }
-  // List all methods
   Json o = Json::array();
   for (const MethodDoc* d = docs; d->name; ++d) {
     Json e = Json::object();
