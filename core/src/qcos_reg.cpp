@@ -1,79 +1,140 @@
-// QCOS methods on the one door. The resident instance lives for the
-// lifetime of the saem_cli process: the process IS the OS session. Every
-// mutation is provenance-chained, and the whole state travels through
-// qcos.snapshot / qcos.restore, so replay and parity never depend on
-// residency. The gate runs before every mutating op and fails closed.
-#include "api.hpp"
+// core/src/qcos_reg.cpp
+//
+// QCOS session registry.
+//
+// This file provides the qcos.* methods used by qcos_shell.py and Bridge.cs.
+// It is intentionally process-local: one saem_cli process is one OS session.
+// The persistent ledger belongs to the caller, as required by the constitution.
 
+#include "api.hpp"
+#include "kernel.hpp"
 #include "qcos.hpp"
+#include "sha256.hpp"
+
+#include <string>
 
 namespace saem {
 namespace {
 
-struct Instance {
-  qcos::Working work;
-  qcos::Episodic ep;
-  qcos::Provenance prov;
-  uint64_t tick = 0;
-};
-Instance& inst() {
-  static Instance i;
-  return i;
-}
-Json denied(const qcos::Verdict& v) {
+Json error_obj(const std::string& msg) {
   Json o = Json::object();
   o.set("ok", false);
-  o.set("reasons", v.reasons);
+  o.set("error", Json(msg));
   return o;
 }
 
-const Registrar k0("qcos.boot", [](const Json&) {
-  Json lim = Json::object();
-  lim.set("working", qcos::WORKING_LIMIT);
-  lim.set("episodic", qcos::EPISODIC_LIMIT);
-  Json o = Json::object();
-  o.set("self", qcos::self_test());
-  o.set("constitution", Json(cos::coreHash()));
-  o.set("limits", lim);
-  return o;
-});
-
-const Registrar k1("qcos.gate", [](const Json& a) {
-  const qcos::Verdict v = qcos::gate(a["op"].asStr(), a.has("args") ? a["args"] : Json::object());
+Json verdict_obj(const qcos::Verdict& v) {
   Json o = Json::object();
   o.set("ok", v.ok);
   o.set("reasons", v.reasons);
+  if (!v.ok) {
+    o.set("error", Json("constitutional gate denied"));
+  }
   return o;
-});
+}
 
-const Registrar k2("qcos.latch", [](const Json& a) {
-  const qcos::Verdict v = qcos::gate("latch", a);
-  if (!v.ok) return denied(v);
-  Instance& I = inst();
-  const bool ok = I.work.latch(a["key"].asStr(), a["value"]);
-  I.ep.push(a);
-  const std::string h = I.prov.append("latch", "l1", a["key"].asStr());
-  ++I.tick;
+Json constitution_json() {
+  Json arr = Json::array();
+
+  auto add = [&](const char* id, const char* text) {
+    Json o = Json::object();
+    o.set("id", Json(std::string(id)));
+    o.set("text", Json(std::string(text)));
+    arr.push(o);
+  };
+
+  add("A0", "every answer is computed from the numbers in the question, never guessed");
+  add("A1", "every number leaving the core prints exactly as the reference engine prints it");
+  add("A2", "the door holds no hidden state; state travels in the JSON, in the caller's ledger");
+  add("A3", "measurement and overwrite are the only irreversible acts; the core reports the debt");
+  add("A4", "no belief is declared without moral certainty, 1000:1");
+  add("A5", "the ledger is append-only; rules without machine checks remain hypotheses");
+  add("A6", "the JavaScript bridge is a ruler, never a fallback; the shipped product runs the core alone");
+
+  return arr;
+}
+
+// Process-local session state.
+// The caller's ledger remains the persistent truth.
+qcos::Working g_working;
+qcos::Provenance g_prov;
+qcos::Episodic g_episodic;
+
+const Registrar qcos_boot_reg("qcos.boot", [](const Json&) {
+  Json self = qcos::self_test();
+
   Json o = Json::object();
-  o.set("ok", ok);
-  o.set("hash", Json(h));
+  o.set("ok", self["ok"]);
+  o.set("self", self);
+  o.set("constitution", constitution_json());
   return o;
 });
 
-const Registrar k3("qcos.read", [](const Json& a) {
-  return inst().work.read(a["key"].asStr());
+const Registrar qcos_gate_reg("qcos.gate", [](const Json& a) {
+  const std::string op = a["op"].asStr();
+  const Json args = a.has("args") ? a["args"] : Json::object();
+
+  qcos::Verdict v = qcos::gate(op, args);
+  return verdict_obj(v);
 });
 
-const Registrar k4("qcos.episode", [](const Json& a) {
-  return inst().ep.recent(a["n"].asInt(8));
+const Registrar qcos_latch_reg("qcos.latch", [](const Json& a) {
+  if (!a.has("key") || !a.has("value")) {
+    return error_obj("qcos.latch: missing key or value");
+  }
+
+  qcos::Verdict v = qcos::gate("latch", a);
+  if (!v.ok) {
+    return verdict_obj(v);
+  }
+
+  const std::string key = a["key"].asStr();
+  const Json value = a["value"];
+
+  if (!g_working.latch(key, value)) {
+    return error_obj("qcos.latch: working memory full or key out of bounds");
+  }
+
+  const std::string hash = sha256_hex(canon(value));
+  g_prov.append("latch", key, "qcos.latch");
+
+  Json o = Json::object();
+  o.set("ok", true);
+  o.set("key", Json(key));
+  o.set("hash", Json(hash));
+  return o;
 });
 
-const Registrar k5("qcos.lower", [](const Json& a) {
+const Registrar qcos_read_reg("qcos.read", [](const Json& a) {
+  if (!a.has("key")) {
+    return error_obj("qcos.read: missing key");
+  }
+
+  const std::string key = a["key"].asStr();
+  const Json value = g_working.read(key);
+
+  Json o = Json::object();
+  o.set("ok", true);
+  o.set("key", Json(key));
+  o.set("value", value);
+  return o;
+});
+
+const Registrar qcos_lower_reg("qcos.lower", [](const Json& a) {
+  qcos::Verdict v = qcos::gate("lower", a);
+  if (!v.ok) {
+    return verdict_obj(v);
+  }
+
   const Json sir = qcos::lower_sir(a);
   const Json dir = qcos::lower_dir(sir);
   const Json cir = qcos::lower_cir(sir, dir);
-  const Json mir = qcos::lower_mir(cir, a["target"].str("cpp"));
+
+  const std::string target = a["target"].str("qcos");
+  const Json mir = qcos::lower_mir(cir, target);
+
   Json o = Json::object();
+  o.set("ok", true);
   o.set("sir", sir);
   o.set("dir", dir);
   o.set("cir", cir);
@@ -81,62 +142,102 @@ const Registrar k5("qcos.lower", [](const Json& a) {
   return o;
 });
 
-const Registrar k6("qcos.exec", [](const Json& a) {
-  const qcos::Verdict v = qcos::gate("exec", a);
-  if (!v.ok) return denied(v);
-  Instance& I = inst();
-  const qcos::ExecResult r = qcos::exec_cir(I.work, a["cir"]);
-  const std::string h = I.prov.append("exec", "l1", canon(a["cir"]).substr(0, 32));
+const Registrar qcos_exec_reg("qcos.exec", [](const Json& a) {
+  if (!a.has("cir")) {
+    return error_obj("qcos.exec: missing cir");
+  }
+
+  qcos::Verdict v = qcos::gate("exec", a);
+  if (!v.ok) {
+    return verdict_obj(v);
+  }
+
+  const Json cir = a["cir"];
+  qcos::ExecResult er = qcos::exec_cir(g_working, cir);
+
   Json o = Json::object();
-  o.set("ok", r.ok);
-  o.set("trace", r.trace);
-  o.set("hash", Json(h));
+  o.set("ok", er.ok);
+  o.set("trace", er.trace);
+
+  if (!er.ok) {
+    o.set("error", Json("execution failed"));
+    return o;
+  }
+
+  const std::string hash = sha256_hex(canon(er.trace));
+  g_prov.append("exec", "cir", "qcos.exec");
+
+  o.set("hash", Json(hash));
   return o;
 });
 
-const Registrar k7("qcos.snapshot", [](const Json&) {
-  Instance& I = inst();
+const Registrar qcos_snapshot_reg("qcos.snapshot", [](const Json&) {
   Json o = Json::object();
-  o.set("working", I.work.snapshot());
-  o.set("episodic", I.ep.recent(qcos::EPISODIC_LIMIT));
-  o.set("prov", I.prov.log);
-  o.set("tick", (int)I.tick);
+  o.set("ok", true);
+  o.set("working", g_working.snapshot());
+  o.set("prov", g_prov.log);
+  o.set("prev", Json(g_prov.prev));
+  o.set("tick", g_prov.tick);
   return o;
 });
 
-const Registrar k8("qcos.restore", [](const Json& a) {
-  Instance& I = inst();
-  const bool ok = I.work.restore(a["working"]);
-  I.prov = qcos::Provenance();
+const Registrar qcos_restore_reg("qcos.restore", [](const Json& a) {
+  if (!a.has("snapshot")) {
+    return error_obj("qcos.restore: missing snapshot");
+  }
+
+  qcos::Verdict v = qcos::gate("restore", a);
+  if (!v.ok) {
+    return verdict_obj(v);
+  }
+
+  const bool ok = g_working.restore(a["snapshot"]);
+  if (ok) {
+    g_prov.append("restore", "l1", "qcos.restore");
+  }
+
   Json o = Json::object();
   o.set("ok", ok);
-  o.set("prov_verify", qcos::verify_log(a["prov"]));
-  return o;
-});
-
-const Registrar k9("qcos.cost", [](const Json& a) {
-  // Total cost = arithmetic + memory movement + network + energy (spec).
-  // Network is zero forever: the core is air-gapped by construction.
-  // Energy counts one Landauer erasure per register overwrite.
-  int arith = 0, mem = 0;
-  for (const Json& st : a["cir"]["steps"].arr()) {
-    const std::string op = st["op"].asStr();
-    if (op == "add" || op == "solve") ++arith;
-    if (op == "latch" || op == "add") ++mem;
+  if (!ok) {
+    o.set("error", Json("restore failed"));
   }
-  Json o = Json::object();
-  o.set("arith", arith);
-  o.set("mem", mem);
-  o.set("net", 0);
-  o.set("energy_kTln2", mem);
   return o;
 });
 
-const Registrar k10("qcos.provenance", [](const Json&) {
-  Instance& I = inst();
+const Registrar qcos_episode_reg("qcos.episode", [](const Json& a) {
+  qcos::Verdict v = qcos::gate("episode", a);
+  if (!v.ok) {
+    return verdict_obj(v);
+  }
+
+  if (a.has("event")) {
+    g_episodic.push(a["event"]);
+  }
+
+  int n = a["n"].asInt(8);
+  if (n < 0) n = 0;
+
   Json o = Json::object();
-  o.set("log", I.prov.log);
-  o.set("verify", I.prov.verify());
+  o.set("ok", true);
+  o.set("recent", g_episodic.recent(n));
+  return o;
+});
+
+const Registrar qcos_provenance_reg("qcos.provenance", [](const Json&) {
+  Json o = Json::object();
+  o.set("ok", true);
+  o.set("verify", g_prov.verify());
+  o.set("log", g_prov.log);
+  o.set("prev", Json(g_prov.prev));
+  o.set("tick", g_prov.tick);
+  return o;
+});
+
+const Registrar qcos_cost_reg("qcos.cost", [](const Json&) {
+  Json o = Json::object();
+  o.set("ok", true);
+  o.set("debt_bits", 0.0);
+  o.set("unit", Json("kT ln 2"));
   return o;
 });
 
