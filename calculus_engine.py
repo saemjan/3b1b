@@ -5,8 +5,7 @@ import ast
 import math
 import operator
 
-from manim import Axes, Dot, Polygon, VGroup, config
-
+from manim import Axes, Dot, Polygon, VGroup, Line, config
 
 _BINARY_OPERATORS = {
     ast.Add: operator.add,
@@ -37,7 +36,6 @@ _FUNCTIONS = {
     "tanh": math.tanh,
 }
 
-
 def compile_expression(expression):
     """Compile a bounded arithmetic expression in x without Python eval."""
     source = str(expression).strip()
@@ -49,7 +47,11 @@ def compile_expression(expression):
     except (SyntaxError, RecursionError) as exc:
         raise ValueError(f"invalid calculus expression: {expression!r}.") from exc
 
-    def evaluate_node(node, x):
+    def evaluate_node(node, x, depth=0):
+        # Euler's Canon: Computations must be strictly bounded and finite.
+        if depth > 32:
+            raise ValueError("calculus expression AST depth limit (32) exceeded.")
+        
         if isinstance(node, ast.Constant):
             if isinstance(node.value, bool) or not isinstance(
                     node.value, (int, float)):
@@ -64,18 +66,16 @@ def compile_expression(expression):
                 return math.e
             raise ValueError(f"unsupported name in calculus expression: {node.id}.")
         if isinstance(node, ast.BinOp) and type(node.op) in _BINARY_OPERATORS:
-            left = evaluate_node(node.left, x)
-            right = evaluate_node(node.right, x)
+            left = evaluate_node(node.left, x, depth + 1)
+            right = evaluate_node(node.right, x, depth + 1)
             if isinstance(node.op, ast.Pow) and abs(right) > 64:
                 raise ValueError("calculus expression exponent is limited to 64.")
             return _BINARY_OPERATORS[type(node.op)](left, right)
         if isinstance(node, ast.UnaryOp) and type(node.op) in _UNARY_OPERATORS:
-            return _UNARY_OPERATORS[type(node.op)](
-                evaluate_node(node.operand, x)
-            )
+            return _UNARY_OPERATORS[type(node.op)](evaluate_node(node.operand, x, depth + 1))
         if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
                 and node.func.id in _FUNCTIONS and not node.keywords):
-            args = [evaluate_node(arg, x) for arg in node.args]
+            args = [evaluate_node(arg, x, depth + 1) for arg in node.args]
             return _FUNCTIONS[node.func.id](*args)
         raise ValueError("calculus expression contains an unsupported operation.")
 
@@ -95,7 +95,6 @@ def compile_expression(expression):
 
     return function
 
-
 def _range(value, default, name):
     if value is None:
         value = default
@@ -111,7 +110,6 @@ def _range(value, default, name):
     if low >= high or step <= 0:
         raise ValueError(f"{name} min must be below max and step must be positive.")
     return low, high, step
-
 
 def _axes(item):
     x_min, x_max, x_step = _range(
@@ -143,7 +141,6 @@ def _axes(item):
     ).move_to(center)
     return axes, (x_min, x_max), (y_min, y_max)
 
-
 def _function_graph(axes, function, x_range, item):
     return axes.plot(
         function,
@@ -151,7 +148,6 @@ def _function_graph(axes, function, x_range, item):
         color=item.get("color", "#F2F3F5"),
         stroke_width=float(item.get("stroke_width", 3.0)),
     )
-
 
 def _validate_interval(item, x_bounds):
     try:
@@ -164,7 +160,6 @@ def _validate_interval(item, x_bounds):
     if start < x_bounds[0] or end > x_bounds[1]:
         raise ValueError("calculus interval must lie within x_range.")
     return start, end
-
 
 def _bounded_integer(value, name, maximum):
     if isinstance(value, bool):
@@ -180,19 +175,30 @@ def _bounded_integer(value, name, maximum):
         raise ValueError(f"{name} must be an integer between 1 and {maximum}.")
     return int(number)
 
-
-def _line_x_range(point_x, slope, intercept, x_bounds, y_bounds):
-    low, high = x_bounds
-    if abs(slope) > 1e-12:
-        y_low_x = (y_bounds[0] - intercept) / slope
-        y_high_x = (y_bounds[1] - intercept) / slope
-        low = max(low, min(y_low_x, y_high_x))
-        high = min(high, max(y_low_x, y_high_x))
-    if low >= high:
-        span = (x_bounds[1] - x_bounds[0]) * 0.01
-        return max(x_bounds[0], point_x - span), min(x_bounds[1], point_x + span)
-    return low, high
-
+def _clip_line(x0, y0, x1, y1, xmin, xmax, ymin, ymax):
+    """Liang-Barsky line clipping algorithm. Ensures mathematical perfection at boundaries."""
+    dx = x1 - x0
+    dy = y1 - y0
+    p = [-dx, dx, -dy, dy]
+    q = [x0 - xmin, xmax - x0, y0 - ymin, ymax - y0]
+    u1, u2 = 0.0, 1.0
+    for i in range(4):
+        if p[i] == 0:
+            if q[i] < 0:
+                return None  # Line is parallel and outside the clipping window
+        else:
+            t = q[i] / p[i]
+            if p[i] < 0:
+                if t > u2: return None
+                if t > u1: u1 = t
+            else:
+                if t < u1: return None
+                if t < u2: u2 = t
+    cx0 = x0 + u1 * dx
+    cy0 = y0 + u1 * dy
+    cx1 = x0 + u2 * dx
+    cy1 = y0 + u2 * dy
+    return (cx0, cy0), (cx1, cy1)
 
 def build_calculus_visual(item, *, kind):
     """Build a graph, derivative, integral region, or Riemann-sum visual."""
@@ -234,25 +240,36 @@ def build_calculus_visual(item, *, kind):
         else:
             raise ValueError("x0 must have neighboring points to estimate a derivative.")
         secant_slope = (y1 - y0) / delta
-        tangent_intercept = y0 - slope * x0
-        secant_intercept = y0 - secant_slope * x0
-        tangent_range = _line_x_range(
-            x0, slope, tangent_intercept, x_bounds, y_bounds,
-        )
+        
+        span = max(x_bounds[1] - x_bounds[0], y_bounds[1] - y_bounds[0]) * 10
+        
+        if abs(slope) > 1e12: # Practically vertical tangent
+            t_start, t_end = (x0, y_bounds[0]), (x0, y_bounds[1])
+        else:
+            tangent_far_x1 = x0 - span
+            tangent_far_y1 = y0 - slope * span
+            tangent_far_x2 = x0 + span
+            tangent_far_y2 = y0 + slope * span
+            clipped_tangent = _clip_line(tangent_far_x1, tangent_far_y1, tangent_far_x2, tangent_far_y2,
+                                         x_bounds[0], x_bounds[1], y_bounds[0], y_bounds[1])
+            t_start, t_end = clipped_tangent if clipped_tangent else ((x0, y0), (x0, y0))
+
+        if abs(secant_slope) > 1e12:
+            s_start, s_end = (x0, y_bounds[0]), (x0, y_bounds[1])
+        else:
+            secant_intercept = y0 - secant_slope * x0
+            secant_far_x1 = x0 - span
+            secant_far_y1 = secant_slope * secant_far_x1 + secant_intercept
+            secant_far_x2 = x0 + span
+            secant_far_y2 = secant_slope * secant_far_x2 + secant_intercept
+            clipped_secant = _clip_line(secant_far_x1, secant_far_y1, secant_far_x2, secant_far_y2,
+                                        x_bounds[0], x_bounds[1], y_bounds[0], y_bounds[1])
+            s_start, s_end = clipped_secant if clipped_secant else ((x0, y0), (x1, y1))
+
         visuals.extend([
             graph,
-            axes.plot(
-                lambda x: slope * x + tangent_intercept,
-                x_range=tangent_range,
-                color=item.get("tangent_color", "#2ECC71"),
-                stroke_width=3,
-            ),
-            axes.plot(
-                lambda x: secant_slope * x + secant_intercept,
-                x_range=sorted((x0, x1)),
-                color=item.get("secant_color", "#F1C40F"),
-                stroke_width=2.5,
-            ),
+            Line(axes.c2p(*t_start), axes.c2p(*t_end), color=item.get("tangent_color", "#2ECC71"), stroke_width=3),
+            Line(axes.c2p(*s_start), axes.c2p(*s_end), color=item.get("secant_color", "#F1C40F"), stroke_width=2.5),
             Dot(axes.c2p(x0, y0), radius=0.065, color="#2ECC71"),
             Dot(axes.c2p(x1, y1), radius=0.055, color="#F1C40F"),
         ])
