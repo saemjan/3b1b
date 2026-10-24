@@ -1,7 +1,7 @@
 // The registry, the JSON text wrapper, the C door (saem_call), and the
 // Math Brain's methods.
 #include "api.hpp"
-
+#include <cstdio>   // snprintf used by esc_to
 #include <cstdint>
 #include <map>
 #include <new>
@@ -87,11 +87,6 @@ void require_obj(const Json& a, const char* key) {
   if (!a.has(key)) throw std::runtime_error(std::string("missing field: ") + key);
   if (!a[key].isObj()) throw std::runtime_error(std::string("field '") + key + "' must be an object");
 }
-uint32_t hash32(const std::string& s) {
-  uint32_t h = 0x811c9dc5u;
-  for (unsigned char c : s) { h ^= c; h *= 0x01000193u; }
-  return h;
-}
 std::string sup_exp(const std::string& digits, bool neg) {
   static const char* SUP[10] = {
     "\xe2\x81\xb0","\xc2\xb9","\xc2\xb2","\xc2\xb3","\xe2\x81\xb4",
@@ -159,7 +154,7 @@ const Registrar g8("gen.vectors", [](const Json&) -> Json {
 });
 const Registrar g9("gen.hash32", [](const Json& a) -> Json {
   require_str(a, "s");
-  return Json(static_cast<double>(hash32(a["s"].asStr())));
+  return Json(static_cast<double>(hash32(a["s"].asStr())));  // now unambiguous
 });
 const Registrar g10("gen.makeBatch", [](const Json& a) -> Json {
   if (!a.has("items") || !a["items"].isArr())
