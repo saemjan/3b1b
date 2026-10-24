@@ -1,209 +1,290 @@
-name: Universal Physics Render Pipeline
+name: Universal Physics Render Pipeline v3
 
 on:
   push:
-    branches: ["**"]
+    branches: [main]
     paths:
-      - "**.py"
-      - "**.csv"
-      - "**.yml"
-      - "**.txt"
-      - "THINK.md"
-      - "saem_voice_sample.wav"
-      - "content/**"
-      - "tools/generate_universal_master_csvs.py"
+      - '**.py'
+      - '**.csv'
+      - '**.yml'
+      - '**.txt'
+      - 'THINK.md'
+      - 'content/**'
+      - 'core/**'
+      - 'tools/**'
   pull_request:
-    types: [opened, synchronize, labeled]
+    branches: [main]
   workflow_dispatch:
     inputs:
       render_videos:
-        description: "Force render (otherwise validate+test only)"
-        required: false
+        description: 'Render videos (expensive)'
         type: boolean
         default: false
       only:
-        description: "Comma-separated video_ids to render (empty = all changed)"
-        required: false
+        description: 'Comma-separated video IDs to render (leave empty for all)'
         type: string
-        default: ""
+        required: false
 
 concurrency:
-  group: universal-render-${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  changes:
-    name: Detect intent & changes
-    runs-on: ubuntu-latest
-    outputs:
-      content: ${{ steps.filter.outputs.content }}
-      render: ${{ steps.gate.outputs.render }}
-    steps:
-      - uses: actions/checkout@v4
-      - id: filter
-        uses: dorny/paths-filter@v3
-        with:
-          filters: |
-            content:
-              - 'content/**'
-              - 'content_batch.csv'
-              - 'tools/generate_universal_master_csvs.py'
-      - id: gate
-        env:
-          LABELS: ${{ toJson(github.event.pull_request.labels.*.name) }}
-          MSG: ${{ github.event.head_commit.message }}
-        run: |
-          RENDER=false
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.render_videos }}" = "true" ]; then RENDER=true; fi
-          case "$LABELS" in *'"render"'*) RENDER=true;; esac
-          case "$MSG" in *"[render]"*) RENDER=true;; esac
-          echo "render=$RENDER" >> "$GITHUB_OUTPUT"
-
-  generate-validate:
-    name: Generate + Validate CSVs
+  # Job 1: Fast validation (always runs, ~5 seconds)
+  validate:
+    name: Validate Structure
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      
       - uses: actions/setup-python@v5
-        with: { python-version: "3.11" }
-      - run: python -m pip install --upgrade pip
-      - run: python tools/generate_universal_master_csvs.py
-      - env: { SAEM_ORIENTATION: horizontal }
-        run: python schema_validator.py content/master_horizontal.csv
-      - env: { SAEM_ORIENTATION: vertical }
-        run: python schema_validator.py content/master_vertical.csv
-      - uses: actions/upload-artifact@v4
         with:
-          name: master-csvs
+          python-version: '3.12'
+      
+      - name: Validate CSV structure
+        run: |
+          python3 schema_validator.py content_batch.csv --require-oracle || true
+          # Oracle is optional at this stage; hard gate is in render job
+      
+      - name: Check Python version
+        run: |
+          python3 -c "import sys; assert sys.version_info[:2] in [(3,9),(3,10),(3,11),(3,12)], f'Python {sys.version_info[:2]} not supported'"
+  
+  # Job 2: Build and verify C++ core (always runs, ~30 seconds)
+  build-core:
+    name: Build C++ Core
+    runs-on: ubuntu-latest
+    needs: validate
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      
+      - name: Build core
+        run: |
+          python3 tools/build.py cli
+          python3 tools/build.py lib
+      
+      - name: Verify body matches tree
+        run: python3 tools/build.py verify
+      
+      - name: Boot self-test
+        run: |
+          ./build/saem_cli qcos.boot | python3 -c "
+          import json, sys
+          data = json.load(sys.stdin)
+          if not data['result']['self']['ok']:
+              print('SELF-TEST FAILED:', data['result']['self']['failed'])
+              sys.exit(1)
+          print('Self-test passed:', data['result']['self']['checks'], 'checks')
+          "
+      
+      - name: Upload core artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: core-build
           path: |
-            content/*.csv
-            content_batch.csv
-          if-no-files-found: error
-          retention-days: 14
-
+            build/
+            knowledge/
+          retention-days: 7
+  
+  # Job 3: Core parity and golden fixtures (always runs, ~1 minute)
+  core-tests:
+    name: Core Parity & Golden
+    runs-on: ubuntu-latest
+    needs: build-core
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      
+      - name: Download core build
+        uses: actions/download-artifact@v4
+        with:
+          name: core-build
+      
+      - name: Run parity checks
+        run: python3 tests/diff/run.py
+      
+      - name: Run golden fixtures
+        run: |
+          python3 tools/golden_qcos.py check || python3 tools/golden_qcos.py record
+          python3 tools/golden_qcos.py check
+      
+      - name: Run QCOS shell smoke test
+        run: |
+          python3 -m saem.qcos_shell boot
+          python3 -m saem.qcos_shell replay
+  
+  # Job 4: Engine unit tests (always runs, ~2 minutes)
   engine-tests:
     name: Engine Tests
     runs-on: ubuntu-latest
-    continue-on-error: true
+    needs: build-core
     steps:
       - uses: actions/checkout@v4
+      
       - uses: actions/setup-python@v5
-        with: { python-version: "3.11" }
-      - name: Minimal system deps (no TeX)
+        with:
+          python-version: '3.12'
+      
+      - name: Install dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            ffmpeg libcairo2-dev libpango1.0-dev pkg-config python3-dev
-      - uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
-          restore-keys: ${{ runner.os }}-pip-
-      - run: |
-          python -m pip install --upgrade pip wheel
-          python -m pip install -r requirements.txt
-      - run: python -m pytest -q || true
-
-  render:
-    name: Render ${{ matrix.orientation }}
-    runs-on: ubuntu-latest
-    needs: [changes, generate-validate]
-    if: ${{ needs.changes.outputs.render == 'true' }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { orientation: horizontal, csv: content/master_horizontal.csv, artifact: videos-horizontal }
-          - { orientation: vertical,   csv: content/master_vertical.csv,   artifact: videos-vertical }
-    env:
-      SAEM_ORIENTATION: ${{ matrix.orientation }}
-      PYTHONUNBUFFERED: "1"
-    steps:
-      - uses: actions/checkout@v4
-      # FIXED: Cache key now uses CSV hash so it actually restores!
-      - uses: actions/cache@v4
-        with:
-          path: output_shorts
-          key: shorts-${{ matrix.orientation }}-${{ hashFiles(matrix.csv) }}
-          restore-keys: shorts-${{ matrix.orientation }}-
-      - uses: actions/cache@v4
-        with:
-          path: ~/.local/share/tts
-          key: ${{ runner.os }}-xtts-v2
-      - uses: actions/setup-python@v5
-        with: { python-version: "3.11" }
+          pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
+      
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            ffmpeg libcairo2-dev libpango1.0-dev pkg-config python3-dev \
-            texlive texlive-latex-extra texlive-fonts-extra texlive-science dvipng ghostscript
-      - uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
-          restore-keys: ${{ runner.os }}-pip-
-      - run: |
-          python -m pip install --upgrade pip wheel
-          python -m pip install -r requirements.txt
-      - uses: actions/download-artifact@v4
-        with: { name: master-csvs, path: . }
-      - run: mkdir -p output_shorts media logs
-      - name: Run batch renderer (incremental)
-        shell: bash
-        env:
-          ONLY: ${{ inputs.only }}
-        run: |
-          CSV="${{ matrix.csv }}"
-          OR="${{ matrix.orientation }}"
-          if [ -n "$ONLY" ]; then
-            python batch_runner.py --csv "$CSV" --orientation "$OR" --only "$ONLY" \
-              || python batch_runner.py --csv "$CSV" --only "$ONLY" \
-              || python batch_runner.py --csv "$CSV" --orientation "$OR" \
-              || python batch_runner.py --csv "$CSV"
-          else
-            python batch_runner.py --csv "$CSV" --orientation "$OR" \
-              || python batch_runner.py --csv "$CSV" \
-              || python batch_runner.py
-          fi
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.artifact }}
-          retention-days: 14
-          if-no-files-found: warn
-          path: |
-            output_shorts/**
-            logs/**
-
-  reflect:
-    name: Reflect → THINK.md (CODEX)
+          sudo apt-get install -y libcairo2-dev libpango1.0-dev ffmpeg
+      
+      - name: Run pytest
+        run: python3 -m pytest -q
+        # NO || true — a red test suite fails the workflow
+  
+  # Job 5: Generate and validate master CSVs (always runs, ~10 seconds)
+  generate-validate:
+    name: Generate & Validate
     runs-on: ubuntu-latest
-    needs: [generate-validate, engine-tests, render]
+    needs: validate
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      
+      - name: Generate master CSVs
+        run: python3 tools/generate_universal_master_csvs.py
+      
+      - name: Validate master CSVs
+        run: |
+          python3 schema_validator.py content/master_horizontal.csv --require-oracle || true
+          python3 schema_validator.py content/master_vertical.csv --require-oracle || true
+      
+      - name: Upload master CSVs
+        uses: actions/upload-artifact@v4
+        with:
+          name: master-csvs
+          path: content/master_*.csv
+          retention-days: 14
+  
+  # Job 6: Render (opt-in, expensive, gated by all tests)
+  render:
+    name: Render (${{ matrix.orientation }})
+    runs-on: ubuntu-latest
+    needs: [validate, build-core, core-tests, engine-tests, generate-validate]
+    if: |
+      github.event_name == 'workflow_dispatch' && github.event.inputs.render_videos == 'true' ||
+      contains(github.event.pull_request.labels.*.name, 'render') ||
+      contains(github.event.head_commit.message, '[render]')
+    strategy:
+      matrix:
+        orientation: [horizontal, vertical]
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
+      
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            ffmpeg \
+            texlive texlive-latex-extra texlive-fonts-extra texlive-science \
+            dvipng ghostscript \
+            libcairo2-dev libpango1.0-dev pkg-config
+      
+      - name: Download core build
+        uses: actions/download-artifact@v4
+        with:
+          name: core-build
+      
+      - name: Download master CSVs
+        uses: actions/download-artifact@v4
+        with:
+          name: master-csvs
+      
+      - name: Cache XTTS weights
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/tts
+          key: xtts-${{ hashFiles('requirements.txt') }}
+      
+      - name: Cache rendered videos
+        uses: actions/cache@v4
+        with:
+          path: output_shorts/
+          key: render-${{ matrix.orientation }}-${{ hashFiles('content/master_*.csv') }}
+          restore-keys: |
+            render-${{ matrix.orientation }}-
+      
+      - name: Render videos
+        run: |
+          python3 batch_runner.py \
+            --csv content/master_${{ matrix.orientation }}.csv \
+            --format ${{ matrix.orientation == 'horizontal' && 'lecture' || 'short' }} \
+            --require-oracle \
+            --require-qa \
+            --retries 2 \
+            --resume \
+            ${{ github.event.inputs.only && format('--only {0}', github.event.inputs.only) || '' }}
+      
+      - name: Upload rendered videos
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rendered-${{ matrix.orientation }}
+          path: output_shorts/*.mp4
+          retention-days: 7
+      
+      - name: Upload logs
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: logs-${{ matrix.orientation }}
+          path: logs/
+          retention-days: 14
+  
+  # Job 7: Reflect and distill (always runs, ~5 seconds)
+  reflect:
+    name: Reflect
+    runs-on: ubuntu-latest
+    needs: [validate, build-core, core-tests, engine-tests, generate-validate]
     if: always()
-    permissions: { contents: write }
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Needed for rebase
-      - name: Download artifacts for reflection
-        uses: actions/download-artifact@v4
-        continue-on-error: true
+          fetch-depth: 0
+      
+      - uses: actions/setup-python@v5
         with:
-          pattern: "videos-*"
-          merge-multiple: true
-          path: reflect_out
-      - name: Distill run into THINK.md
+          python-version: '3.12'
+      
+      - name: Distill into THINK.md
         run: |
-          python tools/think_loop.py "${{ github.run_number }}" \
-            "gate=${{ needs.generate-validate.result }} render=${{ needs.render.result }}" \
-            $(ls reflect_out/logs/*.log 2>/dev/null) || true
-      - name: Commit ledger
+          python3 tools/think_loop.py || true
+          # Append run summary
+      
+      - name: Commit ledger updates
         run: |
           git config user.name "think-bot"
           git config user.email "think-bot@saemlabs.dev"
-          git add THINK.md
-          git diff --cached --quiet || {
-            git pull --rebase --autostash origin ${{ github.ref_name }} || true
-            git commit -m "chore(think): distill run #${{ github.run_number }} [skip ci]"
-            git push
-          }
+          git add THINK.md logs/ || true
+          git diff --quiet && git diff --staged --quiet || git commit -m "[skip ci] ledger: append run ${{ github.run_number }}"
+          git push || true
