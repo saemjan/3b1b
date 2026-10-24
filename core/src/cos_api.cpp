@@ -108,15 +108,15 @@ const Registrar t1("text.normKey", [](const Json& a) {
 const Registrar t2("text.yearFromHeader", [](const Json& a) {
   const std::string s = a["line"].asStr();
   for (size_t i = 0; i + 3 < s.size(); ++i) {
-    auto dig = [](char c) {
-      return is_digit(static_cast<char32_t>(static_cast<unsigned char>(c)));
+    auto isd = [](unsigned char c) {
+      return is_digit(static_cast<char32_t>(c));
     };
     if ((s[i] == '1' || s[i] == '2') &&
-        dig(s[i]) && dig(s[i+1]) && dig(s[i+2]) && dig(s[i+3])) {
-      return Json(std::atoi(s.c_str() + i));
+        isd(s[i]) && isd(s[i+1]) && isd(s[i+2]) && isd(s[i+3])) {
+      return Json(std::atoi(s.c_str() + static_cast<long>(i)));
     }
   }
-  return Json();   // null
+  return Json();  // null – no year found
 });
 const Registrar t3("text.parseDelimited", [](const Json& a) {
   Json out = Json::array();
