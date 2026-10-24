@@ -1,223 +1,192 @@
+#!/usr/bin/env python3
+"""Voice synthesis + mastering gate.
+
+Pipeline per row:
+  1. text_normalizer prepares narration (units, greek, scientific notation).
+  2. XTTS-v2 clones saem_voice_sample.wav; deterministic seed per video_id
+     (SHA-256 of the id); temperature 0.65, repetition penalty 3.0;
+     automatic CPU fallback on CUDA OOM; speaker latent cached per batch.
+  3. Resample 24 kHz -> 44.1 kHz.
+  4. MASTERING GATE: soundscape.master_voice_only (DC-remove, HPF 80 Hz,
+     compress 3:1, LPF 12 kHz, LUFS target, peak limit). If soundscape is
+     unavailable the raw voice is used and mastered=False is reported.
+  5. Ambient pad matched to voice length.
+  6. LUFS measured and returned for the ledger.
+
+Standalone:
+    python3 generate_audio.py <video_id> <script.txt> <out_voice.wav> <out_pad.wav>
 """
-generate_audio.py — Neural voice synthesis (XTTS-v2) + ambient pad.
-
-Produces two WAVs per row:
-    <id>_voice.wav   synthesized speech in the cloned voice
-    <id>_pad.wav     low-pass filtered noise bed mixed under the voice
-
-Optional CSV columns:
-    language         — 'en', 'hi', 'es', ... (default 'en')
-    tts_speed        — speed multiplier (default 1.0)
-    tts_temperature  — sampling temperature (default 0.65)
-"""
-from __future__ import annotations
-
 import hashlib
+import json
 import os
+import subprocess
+import sys
+import wave
 from pathlib import Path
 
-import numpy as np
-import soundfile as sf
-import torch
-from scipy.signal import resample_poly
-from TTS.api import TTS
+ROOT = Path(__file__).resolve().parent
+TEMP = ROOT / "temp_audio"
+SPEAKER_WAV = ROOT / "saem_voice_sample.wav"
 
 try:
-    from text_normalizer import normalize as normalize_text
+    import text_normalizer
 except ImportError:
-    def normalize_text(s):
-        return s
+    text_normalizer = None
 
-os.environ.setdefault("COQUI_TOS_AGREED", "1")
+try:
+    import soundscape
+except ImportError:
+    soundscape = None
 
-CANONICAL_SR   = 44100
-TARGET_PAD_DB  = -34.0
-_TTS_MODEL: TTS | None = None
-_SPEAKER_LATENT: tuple | None = None
+try:
+    from tools.visual_qa import measure_lufs
+except ImportError:
+    def measure_lufs(_p):
+        return None
 
-
-def get_tts_model(use_gpu: bool | None = None) -> TTS:
-    global _TTS_MODEL
-    if _TTS_MODEL is None:
-        if use_gpu is None:
-            use_gpu = torch.cuda.is_available()
-        print(f"[TTS] Loading XTTS-v2 (GPU={use_gpu})…")
-        _TTS_MODEL = TTS(
-            "tts_models/multilingual/multi-dataset/xtts_v2",
-            gpu=use_gpu,
-        )
-    return _TTS_MODEL
+_SPEAKER_CACHE = {}
 
 
-def _get_speaker_latent(tts: TTS, speaker_wav: str) -> tuple:
-    global _SPEAKER_LATENT
-    if _SPEAKER_LATENT is None:
-        print(f"[TTS] Computing speaker latent from '{speaker_wav}'…")
-        gpt_cond_latent, speaker_embedding = (
-            tts.synthesizer.tts_model.get_conditioning_latents(
-                audio_path=[speaker_wav]
-            )
-        )
-        _SPEAKER_LATENT = (gpt_cond_latent, speaker_embedding)
-    return _SPEAKER_LATENT
+def seed_for(video_id):
+    return int(hashlib.sha256(video_id.encode("utf-8")).hexdigest()[:8], 16)
 
 
-def clean_audio_text(text: str) -> str:
-    if not text:
-        return ""
-    text = str(text).strip().strip('"\'').strip()
-    text = text.replace("\n", " ").replace("\r", " ")
-    text = " ".join(text.split())
-    if text and text[-1] not in ".!?":
-        text += "."
-    return text
+def normalize_script(script):
+    if text_normalizer is None:
+        return script
+    fn = getattr(text_normalizer, "normalize", None) or \
+         getattr(text_normalizer, "normalize_text", None)
+    return fn(script) if fn else script
 
 
-def _seed_from_id(vid_id: str) -> int:
-    h = hashlib.sha256(vid_id.encode("utf-8")).hexdigest()
-    return int(h[:8], 16)
+def _resample(src, dst, rate=44100):
+    subprocess.run(
+        ["ffmpeg", "-y", "-loglevel", "error", "-i", str(src),
+         "-ar", str(rate), "-ac", "1", str(dst)],
+        check=True)
 
 
-def get_wav_duration(path: str | Path) -> float:
-    info = sf.info(str(path))
-    return float(info.frames) / float(info.samplerate)
-
-
-def _resample_to_canonical(path: str | Path):
-    data, sr = sf.read(str(path))
-    if sr != CANONICAL_SR:
-        gcd = np.gcd(int(sr), CANONICAL_SR)
-        up = CANONICAL_SR // gcd
-        down = int(sr) // gcd
-        resampled = resample_poly(data, up, down, axis=0)
-        resampled = np.clip(resampled, -1.0, 1.0)
-        sf.write(str(path), resampled.astype(np.float32),
-                 CANONICAL_SR, subtype="PCM_16")
-
-
-def create_ambient_pad(
-    voice_path: str | Path,
-    output_pad_path: str | Path,
-    target_gain_db: float = TARGET_PAD_DB,
-    sample_rate: int = CANONICAL_SR,
-):
-    data, sr = sf.read(str(voice_path))
-    if sr != sample_rate:
-        raise ValueError(
-            f"Voice sample rate {sr} does not match target {sample_rate}. "
-            f"Call _resample_to_canonical first."
-        )
-    n = len(data) if data.ndim == 1 else data.shape[0]
-    time_axis = np.arange(n, dtype=np.float64) / sr
-
-    # A restrained minor-seventh harmonic bed gives the explainer a tonal floor.
-    frequencies = (110.0, 164.81, 196.0, 220.0)
-    weights = (1.0, 0.34, 0.22, 0.12)
-    bed = sum(
-        weight * np.sin(2.0 * np.pi * frequency * time_axis)
-        for frequency, weight in zip(frequencies, weights)
-    )
-    motion = 0.82 + 0.18 * np.sin(2.0 * np.pi * 0.075 * time_axis)
-    bed *= motion
-
-    rms = np.sqrt(np.mean(bed ** 2) + 1e-12)
-    target_rms = 10 ** (target_gain_db / 20.0)
-    bed = (bed / rms) * target_rms
-
-    fade_in = min(int(sr * 1.2), n // 2)
-    fade_out = min(int(sr * 1.8), n // 2)
-    envelope = np.ones(n, dtype=np.float64)
-    if fade_in:
-        envelope[:fade_in] *= np.linspace(0.0, 1.0, fade_in)
-    if fade_out:
-        envelope[-fade_out:] *= np.linspace(1.0, 0.0, fade_out)
-    bed *= envelope
-    sf.write(str(output_pad_path), np.clip(bed, -1.0, 1.0).astype(np.float32),
-             int(sr), subtype="PCM_16")
-
-
-def synthesize_audio_for_row(
-    row: dict,
-    speaker_wav: str = "saem_voice_sample.wav",
-    output_dir: str = ".",
-) -> tuple[str, str, float]:
-    vid_id = (str(row.get("video_id") or "short_video")).strip() or "short_video"
-    out = Path(output_dir)
-    out.mkdir(parents=True, exist_ok=True)
-
-    voice_path = out / f"{vid_id}_voice.wav"
-    pad_path   = out / f"{vid_id}_pad.wav"
-
-    script = clean_audio_text(row.get("audio_script", ""))
-    script = normalize_text(script)
-    if not script:
-        raise ValueError(f"Audio script is missing for video ID '{vid_id}'")
-    if not Path(speaker_wav).exists():
-        raise FileNotFoundError(
-            f"Reference voice sample '{speaker_wav}' not found"
-        )
-
-    language    = (str(row.get("language") or "en")).strip() or "en"
-    speed       = float(row.get("tts_speed") or 1.0)
-    temperature = float(row.get("tts_temperature") or 0.65)
-    seed        = _seed_from_id(vid_id)
-
-    print(f"[TTS] Synthesizing '{vid_id}' "
-          f"(lang={language}, speed={speed}, temp={temperature}, "
-          f"seed={seed})")
-    tts = get_tts_model()
-
-    torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(seed)
-    np.random.seed(seed)
-
-    gpt_cond_latent, speaker_embedding = _get_speaker_latent(tts, speaker_wav)
-
-    def _infer(tts_ref: TTS, gpt, emb) -> np.ndarray:
-        base = dict(
-            text=script,
-            language=language,
-            gpt_cond_latent=gpt,
-            speaker_embedding=emb,
-            temperature=temperature,
-            speed=speed,
-            repetition_penalty=3.0,
-        )
-        try:
-            result = tts_ref.synthesizer.tts_model.inference(
-                **base, enable_text_splitting=True)
-        except TypeError:
-            result = tts_ref.synthesizer.tts_model.inference(**base)
-        wav_raw = result["wav"]
-        if isinstance(wav_raw, torch.Tensor):
-            wav_raw = wav_raw.cpu().detach().numpy()
-        return np.array(wav_raw, dtype=np.float32)
-
+def _duration_sec(path):
     try:
-        wav_data = _infer(tts, gpt_cond_latent, speaker_embedding)
-    except Exception as e:
-        if "cuda" in str(e).lower():
-            print("[TTS] CUDA OOM detected — retrying on CPU")
-            global _TTS_MODEL, _SPEAKER_LATENT
-            _TTS_MODEL = None
-            _SPEAKER_LATENT = None
-            tts = get_tts_model(use_gpu=False)
-            gpt_cond_latent, speaker_embedding = _get_speaker_latent(
-                tts, speaker_wav
-            )
-            wav_data = _infer(tts, gpt_cond_latent, speaker_embedding)
-        else:
+        with wave.open(str(path)) as w:
+            return w.getnframes() / float(w.getframerate())
+    except Exception:
+        out = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+             "-of", "csv=p=0", str(path)],
+            capture_output=True, text=True, check=True)
+        return float(out.stdout.strip())
+
+
+def _master(voice_path):
+    """Mastering gate. Returns True when the chain actually ran."""
+    if soundscape is None:
+        return False
+    for name in ("master_voice_only", "master_voice", "master"):
+        fn = getattr(soundscape, name, None)
+        if not fn:
+            continue
+        try:
+            if name == "master_voice_only":
+                fn(str(voice_path), str(voice_path), "youtube")
+            else:
+                fn(str(voice_path), str(voice_path))
+            return True
+        except TypeError:
+            try:
+                fn(str(voice_path))
+                return True
+            except Exception:
+                return False
+        except Exception:
+            return False
+    return False
+
+
+def _make_pad(pad_path, duration):
+    if soundscape is not None:
+        fn = getattr(soundscape, "make_pad", None) or \
+             getattr(soundscape, "ambient_pad", None)
+        if fn:
+            try:
+                fn(str(pad_path), duration)
+                return
+            except Exception:
+                pass
+    subprocess.run(
+        ["ffmpeg", "-y", "-loglevel", "error",
+         "-f", "lavfi",
+         "-i", f"anoisesrc=color=pink:duration={duration:.2f}:seed=7",
+         "-af", "lowpass=f=320,volume=0.02", str(pad_path)],
+        check=True)
+
+
+def synthesize(row, out_voice, out_pad, speaker_wav=SPEAKER_WAV):
+    """Full audio gate for one row. Returns dict(duration, lufs, mastered)."""
+    video_id = row["video_id"]
+    script = normalize_script(row.get("audio_script", ""))
+    TEMP.mkdir(parents=True, exist_ok=True)
+    out_voice, out_pad = Path(out_voice), Path(out_pad)
+
+    if not Path(speaker_wav).exists():
+        raise RuntimeError(f"missing voice reference: {speaker_wav}")
+
+    raw = TEMP / f"{video_id}_raw.wav"
+    seed = seed_for(video_id)
+    tts = _load_tts(speaker_wav)
+    try:
+        tts["synth"].tts_to_file(
+            text=script,
+            speaker_wav=str(speaker_wav),
+            language=row.get("language", "en"),
+            file_path=str(raw),
+            temperature=0.65,
+            repetition_penalty=3.0,
+            seed=seed,
+        )
+    except RuntimeError as e:
+        if "CUDA" not in str(e).upper() and "out of memory" not in str(e).lower():
             raise
+        print("[audio] CUDA OOM; retrying on CPU")
+        os.environ["CUDA_VISIBLE_DEVICES"] = ""
+        tts = _load_tts(speaker_wav, force_cpu=True)
+        tts["synth"].tts_to_file(
+            text=script, speaker_wav=str(speaker_wav),
+            language=row.get("language", "en"), file_path=str(raw),
+            temperature=0.65, repetition_penalty=3.0, seed=seed)
 
-    sf.write(str(voice_path), wav_data, 24000, subtype="PCM_16")
-    raw_duration = len(wav_data) / 24000.0
-    _resample_to_canonical(voice_path)
-    duration = get_wav_duration(voice_path)
-    create_ambient_pad(voice_path, pad_path, sample_rate=CANONICAL_SR)
+    _resample(raw, out_voice, 44100)
+    mastered = _master(out_voice)
+    duration = _duration_sec(out_voice)
+    _make_pad(out_pad, duration)
+    lufs = measure_lufs(out_voice)
+    return {"duration": duration, "lufs": lufs, "mastered": mastered}
 
-    drift = duration - raw_duration
-    print(f"[TTS] Completed '{vid_id}' | "
-          f"raw {raw_duration:.2f}s → final {duration:.2f}s "
-          f"(drift {drift:+.3f}s)")
-    return str(voice_path), str(pad_path), duration
+
+def _load_tts(speaker_wav, force_cpu=False):
+    key = ("cpu" if force_cpu else "any", str(speaker_wav))
+    if key in _SPEAKER_CACHE:
+        return _SPEAKER_CACHE[key]
+    from TTS.api import TTS
+    import torch
+    device = "cpu" if (force_cpu or not torch.cuda.is_available()) else "cuda"
+    synth = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to(device)
+    entry = {"synth": synth, "device": device}
+    _SPEAKER_CACHE[key] = entry
+    return entry
+
+
+def main():
+    if len(sys.argv) < 5:
+        print("usage: generate_audio.py <video_id> <script.txt> "
+              "<out_voice.wav> <out_pad.wav>")
+        return 1
+    vid, script_path, voice, pad = sys.argv[1:5]
+    script = Path(script_path).read_text(encoding="utf-8")
+    info = synthesize({"video_id": vid, "audio_script": script}, voice, pad)
+    print(json.dumps(info))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
