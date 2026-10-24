@@ -1,60 +1,34 @@
-# Python bytecode and caches
+# python
+.venv/
 __pycache__/
 *.py[cod]
-*$py.class
 .pytest_cache/
-.mypy_cache/
-.ruff_cache/
-.coverage
-.coverage.*
-htmlcov/
 
-# Virtual environments
-.venv/
-venv/
-env/
-ENV/
-
-# Local environment variables and secrets
-.env
-.env.*
-!.env.example
-
-# Packaging / build artifacts
+# core build artifacts
 build/
-dist/
-*.egg-info/
-.eggs/
-wheels/
-pip-wheel-metadata/
+core/build/
 
-# Editor and operating-system files
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
+# pipeline artifacts (CI produces these; never source)
+media/
+output_shorts/
+temp_audio/
+temp_jobs/
+*.part.mp4
+.render_cache.json
+
+# logs: keep the ledgers, drop the noise
+logs/reports/
+logs/*.log
+
+# PRIVATE: never commit voice, secrets, tokens
+saem_voice_sample.wav
+voice/
+secrets/
+.env
+tokens/
+
+# os / editor
 .DS_Store
 Thumbs.db
-Desktop.ini
 
-# Manim-generated render assets and LaTeX intermediates
-# Keep source code and authored CSV/documentation tracked.
-media/
-
-# Generated video/audio exports
-output_shorts/
-*.tmp
-*.temp
-*.log
-
-# Generated narration/audio files (keep explicitly named source samples)
-narration/
-audio_output/
-generated_audio/
-*.generated.wav
-*.generated.mp3
-
-# Test and local run artifacts
-.pytest_cache/
-test-results/
+# tracked on purpose: knowledge/cases.tsv, grown/, tests/golden/, logs/*.jsonl
