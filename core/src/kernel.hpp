@@ -1,27 +1,14 @@
-// The QCOS kernel: Feynman's file clerk (ch.1) as a shared blackboard,
-// Feynman's cursor machines (ch.6) as processes, and Landauer's bill
-// (ch.5) as an entropy-debt ledger. Overwriting a blackboard entry erases
-// the old value; erasure costs kT ln 2 per bit, so the kernel counts the
-// bits it destroys and reports the debt instead of hiding it.
-//
-// v2 FIX: canon() now escapes strings exactly like Json::dump (esc_to) and
-// like the JS ruler's JSON.stringify. Previously quotes/backslashes were
-// emitted raw, so kernel.soul and qcos.provenance diverged from the ruler
-// for any dynamic string (A1/A6 violation, the intermittent "core error").
+// core/src/kernel.hpp
 #pragma once
 #include <string>
 #include <utility>
 #include <vector>
-
 #include "cog.hpp"
 #include "qreg.hpp"
 #include "sha256.hpp"
 
 namespace saem {
 
-// Canonical JSON text, byte-identical to Json::dump and to the ruler's
-// JSON.stringify: strings escaped, numbers through jsnum, object keys in
-// insertion order. Built only from the visible reading API.
 inline std::string canon(const Json& j) {
   switch (j.type()) {
     case Json::Null: return "null";
@@ -31,14 +18,13 @@ inline std::string canon(const Json& j) {
       std::string out;
       out += '"';
       for (unsigned char c : j.asStr()) {
+        // Fixed: Restored backslashes for JSON string escaping
         if (c == '"' || c == '\\') { out += '\\'; out += static_cast<char>(c); }
         else if (c == '\n') out += "\\n";
         else if (c == '\t') out += "\\t";
         else if (c == '\r') out += "\\r";
         else if (c < 0x20) {
-          char b[8];
-          std::snprintf(b, sizeof b, "\\u%04x", c);
-          out += b;
+          char b[8]; std::snprintf(b, sizeof b, "\\u%04x", c); out += b;
         } else out += static_cast<char>(c);
       }
       out += '"';
@@ -55,9 +41,9 @@ inline std::string canon(const Json& j) {
       const Json::Obj& o = j.obj();
       for (size_t i = 0; i < o.size(); ++i) {
         if (i) s += ",";
-        std::string k;
-        k += '"';
+        std::string k; k += '"';
         for (unsigned char c : o[i].first) {
+          // Fixed: Restored backslashes for JSON string escaping
           if (c == '"' || c == '\\') { k += '\\'; k += static_cast<char>(c); }
           else if (c == '\n') k += "\\n";
           else if (c == '\t') k += "\\t";
@@ -77,7 +63,7 @@ inline std::string canon(const Json& j) {
 struct Proc {
   std::string name;
   QProg prog;
-  std::vector<std::pair<double, Gate>> schedule;  // sin(theta), gate; 1 = full hop
+  std::vector<std::pair<double, Gate>> schedule;
   size_t pc = 0;
   Proc(const std::string& n, size_t nreg, size_t k, uint64_t seed)
       : name(n), prog(nreg, k, seed) {}
@@ -95,46 +81,35 @@ class Kernel {
     for (Proc& p : procs_) if (p.name == name) return &p;
     return nullptr;
   }
-
-  // One clock: every live process executes its next scheduled hop.
   void tick() {
     for (Proc& p : procs_) {
       if (p.done()) continue;
-      const auto st = p.schedule[p.pc];
-      ++p.pc;
+      const auto st = p.schedule[p.pc]; ++p.pc;
       if (st.first >= 1.0) p.prog.hop(p.pc - 1, st.second);
       else p.prog.split(p.pc - 1, st.second, st.first);
     }
   }
-
-  // File-clerk memory with a Landauer ledger.
   void set(const std::string& key, const Json& v) {
     if (board_.has(key)) debt_bits_ += 8.0 * double(canon(board_[key]).size());
     board_.set(key, v);
   }
   Json get(const std::string& key) const { return board_[key]; }
   const Json& board() const { return board_; }
-  double entropy_debt_kTln2() const { return debt_bits_; }  // units of kT ln 2
-
+  double entropy_debt_kTln2() const { return debt_bits_; }
   std::string soul() const { return sha256_hex(canon(board_)); }
-
   Json status() const {
     Json a = Json::array();
     for (const Proc& p : procs_) {
       Json o = Json::object();
-      o.set("name", p.name);
-      o.set("pc", (int)p.pc);
-      o.set("halt", p.halted());
-      o.set("done", p.done());
+      o.set("name", p.name); o.set("pc", (int)p.pc);
+      o.set("halt", p.halted()); o.set("done", p.done());
       a.push(o);
     }
     return a;
   }
-
  private:
   Json board_ = Json::object();
   std::vector<Proc> procs_;
   double debt_bits_ = 0;
 };
-
-}  // namespace saem
+}
