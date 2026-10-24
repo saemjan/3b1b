@@ -1,0 +1,47 @@
+[
+  {
+    "id": "hash32_ambiguous",
+    "sig": "call of overloaded 'hash32\\(const std::string&\\)' is ambiguous",
+    "file": "core/src/api.cpp",
+    "action": "delete_local_hash32",
+    "alpha": 3,
+    "beta": 0,
+    "hint": "Remove the local hash32 definition; keep only the one in util.hpp"
+  },
+  {
+    "id": "is_digit_u32",
+    "sig": "cannot convert 'saem::u32'.*to 'char32_t'",
+    "file": "core/src/cos_api.cpp",
+    "action": "fix_yearFromHeader",
+    "alpha": 2,
+    "beta": 0,
+    "hint": "Pass char32_t, not u32, to is_digit"
+  },
+  {
+    "id": "apply_vs_std_apply",
+    "sig": "incomplete type 'std::tuple_size<saem::Gate>'",
+    "file": "core/src/rev.hpp",
+    "action": "qualify_apply",
+    "alpha": 1,
+    "beta": 0,
+    "hint": "Change apply(...) to saem::apply(...) to avoid collision with std::apply"
+  },
+  {
+    "id": "missing_core_methods",
+    "sig": "core\\.methods|BLIND -- speaks no methods",
+    "file": "core/src/api.cpp",
+    "action": "add_core_methods",
+    "alpha": 4,
+    "beta": 0,
+    "hint": "Register core.methods Registrar"
+  },
+  {
+    "id": "api_registry_g",
+    "sig": "'Registrar' does not name a type",
+    "file": "core/src/api_registry.g.cpp",
+    "action": "delete_file",
+    "alpha": 2,
+    "beta": 0,
+    "hint": "Delete the broken generated fragment"
+  }
+]
