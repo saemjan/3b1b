@@ -48,6 +48,8 @@
 
 - #119 gate=success render=skipped 2026-10-24 wall=– sigs=clean
 
+- #120 gate=success render=skipped 2026-10-24 wall=– sigs=clean
+
 ## 4. Open hypotheses
 - H1 ManimGX (wgpu) hot primitives ≥10× speed. 
 - H2 tts_router (edge drafts / XTTS finals).
