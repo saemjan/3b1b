@@ -1,8 +1,8 @@
+// core/src/json.hpp
 // Minimal JSON for the Saem core. No dependencies. Objects keep insertion
 // order, strings are UTF-8, numbers print in their shortest round-trip
 // form through jsnum, missing fields never throw.
 #pragma once
-#include <cstdio>   // for snprintf used in esc_to
 #include <cmath>
 #include <cstdint>
 #include <stdexcept>
@@ -53,6 +53,8 @@ class Json {
   size_t size() const {
     return t_ == Array ? a_.size() : t_ == Object ? o_.size() : 0;
   }
+  
+  // Fixed operator[] signatures
   const Json& operator[](const std::string& k) const {
     if (t_ == Object)
       for (const auto& kv : o_)
@@ -62,6 +64,7 @@ class Json {
   const Json& operator[](size_t i) const {
     return (t_ == Array && i < a_.size()) ? a_[i] : null_json();
   }
+  
   bool has(const std::string& k) const {
     if (t_ == Object)
       for (const auto& kv : o_)
@@ -111,6 +114,7 @@ class Json {
   static const Obj& empty_obj() { static const Obj e; return e; }
   static const Json& null_json() { static const Json e; return e; }
 
+  // Fixed escape sequence backslashes
   static void esc_to(std::string& out, const std::string& s) {
     out += '"';
     for (unsigned char c : s) {
@@ -186,7 +190,7 @@ struct P {
         case 'r': out += '\r'; break;
         case 't': out += '\t'; break;
         case 'u': {
-          if (i + 4 > s.size()) throw std::runtime_error("json: bad \\u");
+          if (i + 4 > s.size()) throw std::runtime_error("json: bad u");
           unsigned cp = std::stoul(s.substr(i, 4), nullptr, 16);
           i += 4;
           if (cp >= 0xD800 && cp <= 0xDBFF && i + 6 <= s.size() &&
