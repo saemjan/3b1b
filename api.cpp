@@ -154,6 +154,12 @@ const Registrar g4("gen.demoBank", [](const Json& a) -> Json {
 const Registrar g5("gen.topics", [](const Json&) -> Json {
   Json o = Json::array(); for (const auto& t : gen::topics()) o.push(t); return o;
 });
+// Place near the other Registrars in api.cpp
+const Registrar c0("core.methods", [](const Json&) -> Json {
+  Json o = Json::array();
+  for (const auto& m : saem::methods()) o.push(Json(m));
+  return o;
+});
 const Registrar g6("gen.templates", [](const Json&) -> Json {
   Json o = Json::array();
   for (const auto& t : gen::templates()) {
