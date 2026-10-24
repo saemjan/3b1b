@@ -5,6 +5,7 @@
 #include "api.hpp"
 
 #include <string>
+#include <vector>
 
 extern "C" {
 int saem_learn(const char*, const char*, const char*, const char*, const char*, const char*);
@@ -18,7 +19,7 @@ namespace saem {
 namespace {
 
 const char* STORE = "knowledge/cases.tsv";
-const char* QDIR = "grown";
+const char* QDIR  = "grown";
 
 const Registrar w30("grow.learn", [](const Json& a) {
   const std::string m = a["method"].asStr();
@@ -27,16 +28,21 @@ const Registrar w30("grow.learn", [](const Json& a) {
   const std::string args = a["args"].dump();
   const std::string w = a["witness"].str("");
   const int seq = saem_learn(STORE, m.c_str(), k.c_str(), args.c_str(), o.c_str(), w.c_str());
+  if (seq < 0)
+    throw std::runtime_error("grow.learn failed (I/O or memory)");
   Json r = Json::object();
   r.set("seq", seq);
   return r;
 });
 
 const Registrar w31("grow.recall", [](const Json& a) {
-  static char buf[1 << 20];
-  if (saem_recall(STORE, a["method"].asStr().c_str(), canon(a["args"]).c_str(),
-                  buf, sizeof buf))
-    return Json::parse(buf);
+  // Dynamic buffer – grows if needed (rare for normal cases)
+  std::vector<char> buf(1 << 20);
+  if (saem_recall(STORE, a["method"].asStr().c_str(),
+                  canon(a["args"]).c_str(),
+                  buf.data(), buf.size())) {
+    return Json::parse(buf.data());
+  }
   return Json();  // null: ungrown, and honest about it
 });
 
@@ -47,8 +53,9 @@ const Registrar w32("grow.distill", [](const Json& a) {
   r.set("ok", rc == 0);
   r.set("rc", rc);
   if (rc == 0) {
-    char h[65];
-    if (saem_read_lib(QDIR, n.c_str(), h)) r.set("body", Json(std::string(h)));
+    char h[65] = {0};
+    if (saem_read_lib(QDIR, n.c_str(), h))
+      r.set("body", Json(std::string(h)));
   }
   return r;
 });
