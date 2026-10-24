@@ -1,13 +1,14 @@
 // The registry, the JSON text wrapper, the C door (saem_call), and the
 // Math Brain's methods.
 //
-// v3 (after run #176): THIS repository's gen.hpp is JSON-native.
-//   - gen::make          returns saem::Json            (no Question struct)
-//   - gen::question_with takes  (id, seed, params)     (seed before params)
-//   - gen::solve / bank / topics / templates / vectors all return saem::Json
-// The door therefore passes Json straight through: no local serializer,
-// no struct fields, no cascade. fmt4 / hash32 stay local because the
-// body does not export them. The registry and C door are untouched.
+// v3 (after runs #172/#176): THIS repository's gen.hpp is JSON-native.
+//   - gen::make          returns saem::Json           (no Question struct, no Rng)
+//   - gen::question_with takes  (id, seed, params)    (gen.hpp line 12)
+//   - gen::solve / bank / topics / templates / vectors return saem::Json
+//   - gen exports NO fmt, NO hash32, NO question_json
+// The door passes Json straight through and provides fmt4/hash32 locally.
+// A lambda whose body fails to compile poisons every Registrar call
+// behind it, so every handler here is a minimal pass-through.
 #include "api.hpp"
 
 #include <algorithm>
