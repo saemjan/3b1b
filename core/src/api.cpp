@@ -1,8 +1,5 @@
 // The registry, the JSON text wrapper, the C door (saem_call), and the
-// Math Brain's methods. v6: aligned to the committed gen.hpp contract
-// (question_with takes seed BEFORE params, uint64_t); gen.format is built
-// from numfmt directly (single canon, no gen::fmt dependency); validation
-// restored (A0 fail-closed); Landauer debt reported on unhandled failure (A3).
+// Math Brain's methods.
 #include "api.hpp"
 
 #include <cstdint>
@@ -28,12 +25,14 @@
 namespace saem {
 namespace {
 std::map<std::string, Handler>& table() {
-  static std::map<std::string, Handler> t;   // Meyers singleton: any init order
+  static std::map<std::string, Handler> t;
   return t;
 }
 }  // namespace
 
-Registrar::Registrar(const char* name, Handler h) { table()[name] = std::move(h); }
+Registrar::Registrar(const char* name, Handler h) {
+  table()[name] = std::move(h);
+}
 
 Json call(const std::string& method, const Json& args) {
   auto it = table().find(method);
@@ -52,7 +51,7 @@ std::string call_json(const std::string& method, const std::string& args_json) {
   } catch (const std::bad_alloc&) {
     out = Json::object();
     out.set("ok", false);
-    out.set("error", "LANDAUER_DEBT_OOM");          // A3: report the erasure
+    out.set("error", "LANDAUER_DEBT_OOM");
   } catch (const std::exception& e) {
     out = Json::object();
     out.set("ok", false);
@@ -60,7 +59,7 @@ std::string call_json(const std::string& method, const std::string& args_json) {
   } catch (...) {
     out = Json::object();
     out.set("ok", false);
-    out.set("error", "UNKNOWN_FAILURE_DEBT");        // A3
+    out.set("error", "UNKNOWN_FAILURE_DEBT");
   }
   return out.dump();
 }
@@ -88,22 +87,25 @@ void require_obj(const Json& a, const char* key) {
   if (!a.has(key)) throw std::runtime_error(std::string("missing field: ") + key);
   if (!a[key].isObj()) throw std::runtime_error(std::string("field '") + key + "' must be an object");
 }
-uint32_t hash32(const std::string& s) {              // FNV-1a, the ruler's hash32
+uint32_t hash32(const std::string& s) {
   uint32_t h = 0x811c9dc5u;
   for (unsigned char c : s) { h ^= c; h *= 0x01000193u; }
   return h;
 }
-// 4 significant figures via the SAME canon the ruler uses (A1: one number, one print).
 std::string sup_exp(const std::string& digits, bool neg) {
-  static const char* SUP[10] = {"\xe2\x81\xb0","\xc2\xb9","\xc2\xb2","\xc2\xb3","\xe2\x81\xb4",
-                                "\xe2\x81\xb5","\xe2\x81\xb6","\xe2\x81\xb7","\xe2\x81\xb8","\xe2\x81\xb9"};
+  static const char* SUP[10] = {
+    "\xe2\x81\xb0","\xc2\xb9","\xc2\xb2","\xc2\xb3","\xe2\x81\xb4",
+    "\xe2\x81\xb5","\xe2\x81\xb6","\xe2\x81\xb7","\xe2\x81\xb8","\xe2\x81\xb9"
+  };
   std::string out;
   if (neg) out += "\xe2\x81\xbb";
-  for (char c : digits) if (c >= '0' && c <= '9') out += SUP[c - '0'];
+  for (char c : digits)
+    if (c >= '0' && c <= '9') out += SUP[c - '0'];
   return out;
 }
+// FIXED: round_sig already returns a string → do not pass it to jsnum again.
 std::string fmt4(double x) {
-  const std::string s = jsnum(round_sig(x, 4));
+  const std::string s = round_sig(x, 4);
   const size_t e = s.find('e');
   if (e == std::string::npos) return s;
   std::string ex = s.substr(e + 1);
@@ -117,14 +119,13 @@ std::string fmt4(double x) {
 // ---------- Math Brain ----------
 const Registrar g1("gen.make", [](const Json& a) -> Json {
   require_str(a, "id");
-  Rng R(seed_of(a, 1));
-  return gen::question_json(gen::make(a["id"].asStr(), R));
+  return gen::question_json(gen::make(a["id"].asStr(), seed_of(a, 1)));
 });
 const Registrar g2("gen.questionWith", [](const Json& a) -> Json {
   require_str(a, "id");
   require_obj(a, "params");
-  // COMMITTED ORDER: (id, seed, params)
-  return gen::question_json(gen::question_with(a["id"].asStr(), seed_of(a, 1), a["params"]));
+  return gen::question_json(
+      gen::question_with(a["id"].asStr(), seed_of(a, 1), a["params"]));
 });
 const Registrar g3("gen.solve", [](const Json& a) -> Json {
   require_str(a, "id");
@@ -143,16 +144,19 @@ const Registrar g6("gen.templates", [](const Json&) -> Json {
   Json o = Json::array();
   for (const auto& t : gen::templates()) {
     Json e = Json::object();
-    e.set("id", t.id); e.set("topic", t.topic);
+    e.set("id", t.id);
+    e.set("topic", t.topic);
     o.push(e);
   }
   return o;
 });
 const Registrar g7("gen.format", [](const Json& a) -> Json {
   require_num(a, "x");
-  return Json(fmt4(a["x"].asNum()));     // built from numfmt, no gen::fmt needed
+  return Json(fmt4(a["x"].asNum()));
 });
-const Registrar g8("gen.vectors", [](const Json&) -> Json { return gen::vectors(); });
+const Registrar g8("gen.vectors", [](const Json&) -> Json {
+  return gen::vectors();
+});
 const Registrar g9("gen.hash32", [](const Json& a) -> Json {
   require_str(a, "s");
   return Json(static_cast<double>(hash32(a["s"].asStr())));
@@ -163,19 +167,28 @@ const Registrar g10("gen.makeBatch", [](const Json& a) -> Json {
   Json results = Json::array();
   for (const Json& item : a["items"].arr()) {
     if (!item.isObj()) {
-      Json err = Json::object(); err.set("ok", false); err.set("error", "item must be an object");
-      results.push(err); continue;
+      Json err = Json::object();
+      err.set("ok", false);
+      err.set("error", "item must be an object");
+      results.push(err);
+      continue;
     }
     try {
       require_str(item, "id");
       Json r;
       if (item.has("params") && item["params"].isObj())
-        r = gen::question_json(gen::question_with(item["id"].asStr(), seed_of(item, 1), item["params"]));
-      else { Rng R(seed_of(item, 1)); r = gen::question_json(gen::make(item["id"].asStr(), R)); }
-      Json w = Json::object(); w.set("ok", true); w.set("result", r);
+        r = gen::question_json(
+            gen::question_with(item["id"].asStr(), seed_of(item, 1), item["params"]));
+      else
+        r = gen::question_json(gen::make(item["id"].asStr(), seed_of(item, 1)));
+      Json w = Json::object();
+      w.set("ok", true);
+      w.set("result", r);
       results.push(w);
     } catch (const std::exception& e) {
-      Json err = Json::object(); err.set("ok", false); err.set("error", std::string(e.what()));
+      Json err = Json::object();
+      err.set("ok", false);
+      err.set("error", std::string(e.what()));
       results.push(err);
     }
   }
