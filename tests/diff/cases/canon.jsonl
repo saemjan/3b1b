@@ -1,0 +1,2 @@
+{"name": "gen.questionWith happy", "method": "gen.questionWith", "args": {"id": "x", "seed": 1, "params": {}}}
+{"name": "gen.questionWith missing-params must fail closed on BOTH sides", "method": "gen.questionWith", "error": true, "args": {"id": "x", "seed": 1}}
