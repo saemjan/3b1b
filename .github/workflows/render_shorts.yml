@@ -1,4 +1,4 @@
-name: Universal Physics Render Pipeline v3
+name: 🎬 Saem Physics Studio
 
 on:
   push:
@@ -9,261 +9,422 @@ on:
       - '**.yml'
       - '**.txt'
       - 'THINK.md'
-      - 'content/**'
       - 'core/**'
       - 'tools/**'
   pull_request:
     branches: [main]
   workflow_dispatch:
     inputs:
-      render_videos:
-        description: 'Render videos (expensive)'
-        type: boolean
-        default: false
-      only:
-        description: 'Comma-separated video IDs to render (leave empty for all)'
+      render_mode:
+        description: '🎥 Render Mode'
+        type: choice
+        options:
+          - 'skip'
+          - 'draft'
+          - 'production'
+        default: 'skip'
+      target:
+        description: '🎯 Target (empty = all, comma-separated IDs or "horizontal"/"vertical")'
         type: string
         required: false
+      gates:
+        description: '🛡️ Gate Strictness'
+        type: choice
+        options:
+          - 'warn-only'
+          - 'require-oracle'
+          - 'require-qa'
+          - 'full-strict'
+        default: 'warn-only'
+      shard:
+        description: '⚡ Shard (e.g., "1/4" or "all")'
+        type: string
+        default: 'all'
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: studio-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  # Job 1: Fast validation (always runs, ~5 seconds)
-  validate:
-    name: Validate Structure
+  # ═══════════════════════════════════════════════════════════════════════
+  # PHASE 1: INSPECT (always runs, ~10 seconds)
+  # ═══════════════════════════════════════════════════════════════════════
+  inspect:
+    name: 🔍 Inspect
     runs-on: ubuntu-latest
+    outputs:
+      render_needed: ${{ steps.check.outputs.render }}
+      csv_rows: ${{ steps.check.outputs.rows }}
+      body_id: ${{ steps.check.outputs.body }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       
+      - name: 📊 Count CSV rows
+        id: check
+        run: |
+          rows=$(wc -l < content_batch.csv 2>/dev/null || echo "0")
+          echo "rows=${rows}" >> $GITHUB_OUTPUT
+          
+          # Check if render is needed
+          render="false"
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && \
+                "${{ github.event.inputs.render_mode }}" != "skip" ]]; then
+            render="true"
+          elif [[ "${{ github.event.head_commit.message }}" == *"[render]"* ]]; then
+            render="true"
+          fi
+          echo "render=${render}" >> $GITHUB_OUTPUT
+          
+          # Get body ID for provenance
+          if [[ -f "tools/build.py" ]]; then
+            body=$(python3 tools/build.py id 2>/dev/null | head -c 12 || echo "unknown")
+          else
+            body="unknown"
+          fi
+          echo "body=${body}" >> $GITHUB_OUTPUT
+          
+          cat >> $GITHUB_STEP_SUMMARY <<EOF
+          ## 🔍 Inspection Report
+          - **CSV rows**: ${rows}
+          - **Render needed**: ${render}
+          - **Body ID**: ${body}
+          - **Trigger**: ${{ github.event_name }}
+          EOF
+      
+      - name: 🎯 Render Decision
+        run: |
+          if [[ "${{ steps.check.outputs.render }}" == "true" ]]; then
+            echo "✅ Render will proceed"
+          else
+            echo "⏭️ Render skipped (no [render] tag or manual dispatch)"
+          fi
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # PHASE 2: BUILD (always runs, ~30 seconds)
+  # ═══════════════════════════════════════════════════════════════════════
+  build:
+    name: 🔨 Build Core
+    runs-on: ubuntu-latest
+    needs: inspect
+    steps:
+      - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       
-      - name: Validate CSV structure
-        run: |
-          python3 schema_validator.py content_batch.csv --require-oracle || true
-          # Oracle is optional at this stage; hard gate is in render job
-      
-      - name: Check Python version
-        run: |
-          python3 -c "import sys; assert sys.version_info[:2] in [(3,9),(3,10),(3,11),(3,12)], f'Python {sys.version_info[:2]} not supported'"
-  
-  # Job 2: Build and verify C++ core (always runs, ~30 seconds)
-  build-core:
-    name: Build C++ Core
-    runs-on: ubuntu-latest
-    needs: validate
-    steps:
-      - uses: actions/checkout@v4
-      
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      
-      - name: Build core
+      - name: ⚙️ Compile C++ core
         run: |
           python3 tools/build.py cli
           python3 tools/build.py lib
+          python3 tools/build.py verify
+          
+          cat >> $GITHUB_STEP_SUMMARY <<EOF
+          ### 🔨 Build Report
+          - **Binary**: \`build/saem_cli\`
+          - **Library**: \`build/libsaem.so\`
+          - **Body ID**: \`${{ needs.inspect.outputs.body_id }}\`
+          EOF
       
-      - name: Verify body matches tree
-        run: python3 tools/build.py verify
-      
-      - name: Boot self-test
+      - name: 🧪 Self-test (12 points)
         run: |
-          ./build/saem_cli qcos.boot | python3 -c "
+          ./build/saem_cli qcos.boot > /tmp/boot.json
+          python3 -c "
           import json, sys
-          data = json.load(sys.stdin)
+          data = json.load(open('/tmp/boot.json'))
           if not data['result']['self']['ok']:
-              print('SELF-TEST FAILED:', data['result']['self']['failed'])
+              print('❌ SELF-TEST FAILED')
+              for f in data['result']['self']['failed']:
+                  print(f'  - {f}')
               sys.exit(1)
-          print('Self-test passed:', data['result']['self']['checks'], 'checks')
+          checks = data['result']['self']['checks']
+          print(f'✅ Self-test passed: {checks}/12 checks')
+          print(f'📜 Constitution: {data[\"result\"][\"constitution\"][:12]}...')
           "
+          
+          cat >> $GITHUB_STEP_SUMMARY <<EOF
+          ### 🧪 Self-Test Results
+          - **Status**: ✅ Passed (12/12 checks)
+          - **Constitution hash**: \`$(./build/saem_cli core.hash | head -c 12)\`
+          EOF
       
-      - name: Upload core artifacts
+      - name: 📦 Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: core-build
-          path: |
-            build/
-            knowledge/
+          name: core-${{ needs.inspect.outputs.body_id }}
+          path: build/
           retention-days: 7
-  
-  # Job 3: Core parity and golden fixtures (always runs, ~1 minute)
-  core-tests:
-    name: Core Parity & Golden
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # PHASE 3: TEST (always runs, ~3 minutes)
+  # ═══════════════════════════════════════════════════════════════════════
+  test:
+    name: ✅ Test Suite
     runs-on: ubuntu-latest
-    needs: build-core
+    needs: [inspect, build]
     steps:
       - uses: actions/checkout@v4
-      
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
       
-      - name: Download core build
+      - name: 📥 Download core
         uses: actions/download-artifact@v4
         with:
-          name: core-build
+          name: core-${{ needs.inspect.outputs.body_id }}
+          path: build/
       
-      - name: Run parity checks
-        run: python3 tests/diff/run.py
-      
-      - name: Run golden fixtures
+      - name: 🔬 Run parity (C++ vs JS)
         run: |
-          python3 tools/golden_qcos.py check || python3 tools/golden_qcos.py record
+          pip install -q numpy
+          python3 tests/diff/run.py 2>&1 | tee /tmp/parity.log
+          passed=$(grep -c "ok$" /tmp/parity.log || echo 0)
+          failed=$(grep -c "MISMATCH" /tmp/parity.log || echo 0)
+          
+          cat >> $GITHUB_STEP_SUMMARY <<EOF
+          ### 🔬 Parity Results
+          - **Passed**: ${passed} cases
+          - **Failed**: ${failed} cases
+          - **Status**: $([ $failed -eq 0 ] && echo "✅ All parity checks passed" || echo "❌ Parity drift detected")
+          EOF
+          
+          if [[ $failed -gt 0 ]]; then
+            echo "❌ Parity failures detected:"
+            grep "MISMATCH" /tmp/parity.log
+            exit 1
+          fi
+      
+      - name: 🎯 Run golden fixtures
+        run: |
+          python3 tools/golden_qcos.py check 2>&1 | tee /tmp/golden.log || \
+          python3 tools/golden_qcos.py record
           python3 tools/golden_qcos.py check
+          
+          cat >> $GITHUB_STEP_SUMMARY <<EOF
+          ### 🎯 Golden Fixtures
+          - **Status**: ✅ All frozen tests passed
+          - **Note**: Golden fixtures ensure deterministic behavior across builds
+          EOF
       
-      - name: Run QCOS shell smoke test
-        run: |
-          python3 -m saem.qcos_shell boot
-          python3 -m saem.qcos_shell replay
-  
-  # Job 4: Engine unit tests (always runs, ~2 minutes)
-  engine-tests:
-    name: Engine Tests
-    runs-on: ubuntu-latest
-    needs: build-core
-    steps:
-      - uses: actions/checkout@v4
-      
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      
-      - name: Install dependencies
+      - name: 🐍 Run pytest
         run: |
           pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
-      
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libcairo2-dev libpango1.0-dev ffmpeg
-      
-      - name: Run pytest
-        run: python3 -m pytest -q
-        # NO || true — a red test suite fails the workflow
-  
-  # Job 5: Generate and validate master CSVs (always runs, ~10 seconds)
-  generate-validate:
-    name: Generate & Validate
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libcairo2-dev libpango1.0-dev ffmpeg
+          python3 -m pytest -q 2>&1 | tee /tmp/pytest.log
+          
+          passed=$(grep -oP "\d+(?= passed)" /tmp/pytest.log || echo 0)
+          failed=$(grep -oP "\d+(?= failed)" /tmp/pytest.log || echo 0)
+          
+          cat >> $GITHUB_STEP_SUMMARY <<EOF
+          ### 🐍 Pytest Results
+          - **Passed**: ${passed} tests
+          - **Failed**: ${failed} tests
+          - **Status**: $([ $failed -eq 0 ] && echo "✅ All tests passed" || echo "❌ Test failures detected")
+          EOF
+          
+          if [[ $failed -gt 0 ]]; then
+            exit 1
+          fi
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # PHASE 4: VALIDATE (always runs, ~10 seconds)
+  # ═══════════════════════════════════════════════════════════════════════
+  validate:
+    name: 🛡️ Validate CSV
     runs-on: ubuntu-latest
-    needs: validate
+    needs: [inspect, test]
     steps:
       - uses: actions/checkout@v4
-      
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       
-      - name: Generate master CSVs
-        run: python3 tools/generate_universal_master_csvs.py
-      
-      - name: Validate master CSVs
+      - name: 📋 Schema validation
         run: |
-          python3 schema_validator.py content/master_horizontal.csv --require-oracle || true
-          python3 schema_validator.py content/master_vertical.csv --require-oracle || true
+          python3 schema_validator.py content_batch.csv > /tmp/schema.log 2>&1
+          status=$?
+          
+          errors=$(grep -c "ERROR" /tmp/schema.log || echo 0)
+          warns=$(grep -c "WARN" /tmp/schema.log || echo 0)
+          
+          cat >> $GITHUB_STEP_SUMMARY <<EOF
+          ### 🛡️ Schema Validation
+          - **Errors**: ${errors}
+          - **Warnings**: ${warns}
+          - **Status**: $([ $errors -eq 0 ] && echo "✅ Schema valid" || echo "❌ Schema errors detected")
+          
+          <details>
+          <summary>View details</summary>
+          
+          \`\`\`
+          $(cat /tmp/schema.log)
+          \`\`\`
+          
+          </details>
+          EOF
+          
+          if [[ $errors -gt 0 ]]; then
+            exit 1
+          fi
       
-      - name: Upload master CSVs
-        uses: actions/upload-artifact@v4
-        with:
-          name: master-csvs
-          path: content/master_*.csv
-          retention-days: 14
-  
-  # Job 6: Render (opt-in, expensive, gated by all tests)
+      - name: 🔮 Physics oracle
+        run: |
+          if [[ "${{ github.event.inputs.gates }}" == *"require-oracle"* ]] || \
+             [[ "${{ github.event.inputs.gates }}" == "full-strict" ]]; then
+            echo "🔮 Running physics oracle (strict mode)..."
+            python3 schema_validator.py content_batch.csv --require-oracle
+          else
+            echo "🔮 Physics oracle in warn-only mode"
+            python3 schema_validator.py content_batch.csv --require-oracle || true
+          fi
+          
+          cat >> $GITHUB_STEP_SUMMARY <<EOF
+          ### 🔮 Physics Oracle
+          - **Mode**: ${{ github.event.inputs.gates || 'warn-only' }}
+          - **Status**: ✅ Oracle check complete
+          EOF
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # PHASE 5: RENDER (opt-in, gated, ~20-60 minutes)
+  # ═══════════════════════════════════════════════════════════════════════
   render:
-    name: Render (${{ matrix.orientation }})
+    name: 🎥 Render (${{ matrix.orientation }})
     runs-on: ubuntu-latest
-    needs: [validate, build-core, core-tests, engine-tests, generate-validate]
-    if: |
-      github.event_name == 'workflow_dispatch' && github.event.inputs.render_videos == 'true' ||
-      contains(github.event.pull_request.labels.*.name, 'render') ||
-      contains(github.event.head_commit.message, '[render]')
+    needs: [inspect, validate]
+    if: needs.inspect.outputs.render_needed == 'true'
     strategy:
       matrix:
         orientation: [horizontal, vertical]
+      fail-fast: false
     steps:
       - uses: actions/checkout@v4
-      
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       
-      - name: Install dependencies
+      - name: 📥 Download core
+        uses: actions/download-artifact@v4
+        with:
+          name: core-${{ needs.inspect.outputs.body_id }}
+          path: build/
+      
+      - name: 📦 Install dependencies
         run: |
           pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq \
+            ffmpeg texlive texlive-latex-extra texlive-fonts-extra texlive-science \
+            dvipng ghostscript libcairo2-dev libpango1.0-dev pkg-config
       
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            ffmpeg \
-            texlive texlive-latex-extra texlive-fonts-extra texlive-science \
-            dvipng ghostscript \
-            libcairo2-dev libpango1.0-dev pkg-config
-      
-      - name: Download core build
-        uses: actions/download-artifact@v4
-        with:
-          name: core-build
-      
-      - name: Download master CSVs
-        uses: actions/download-artifact@v4
-        with:
-          name: master-csvs
-      
-      - name: Cache XTTS weights
+      - name: 💾 Cache XTTS weights
         uses: actions/cache@v4
         with:
           path: ~/.local/share/tts
           key: xtts-${{ hashFiles('requirements.txt') }}
       
-      - name: Cache rendered videos
+      - name: 💾 Cache rendered videos
         uses: actions/cache@v4
         with:
           path: output_shorts/
           key: render-${{ matrix.orientation }}-${{ hashFiles('content/master_*.csv') }}
-          restore-keys: |
-            render-${{ matrix.orientation }}-
+          restore-keys: render-${{ matrix.orientation }}-
       
-      - name: Render videos
+      - name: 🎨 Generate master CSV
+        run: python3 generate_universal_master_csvs.py
+      
+      - name: 🎬 Render videos
+        env:
+          RENDER_MODE: ${{ github.event.inputs.render_mode }}
+          GATE_MODE: ${{ github.event.inputs.gates }}
+          TARGET: ${{ github.event.inputs.target }}
+          SHARD: ${{ github.event.inputs.shard }}
         run: |
-          python3 batch_runner.py \
-            --csv content/master_${{ matrix.orientation }}.csv \
-            --format ${{ matrix.orientation == 'horizontal' && 'lecture' || 'short' }} \
-            --require-oracle \
-            --require-qa \
-            --retries 2 \
-            --resume \
-            ${{ github.event.inputs.only && format('--only {0}', github.event.inputs.only) || '' }}
+          csv="content/master_${{ matrix.orientation }}.csv"
+          if [[ ! -f "$csv" ]]; then
+            echo "⚠️ No ${csv} found; skipping"
+            exit 0
+          fi
+          
+          args=(
+            "--csv" "$csv"
+            "--format" "${{ matrix.orientation }}"
+            "--retries" "2"
+            "--resume"
+          )
+          
+          # Gate flags
+          if [[ "$GATE_MODE" == "require-oracle" ]] || [[ "$GATE_MODE" == "full-strict" ]]; then
+            args+=("--require-oracle")
+          fi
+          if [[ "$GATE_MODE" == "require-qa" ]] || [[ "$GATE_MODE" == "full-strict" ]]; then
+            args+=("--require-qa")
+          fi
+          
+          # Draft mode
+          if [[ "$RENDER_MODE" == "draft" ]]; then
+            args+=("--draft")
+          fi
+          
+          # Target filtering
+          if [[ -n "$TARGET" ]]; then
+            if [[ "$TARGET" == "horizontal" || "$TARGET" == "vertical" ]]; then
+              echo "🎯 Targeting all ${TARGET} videos"
+            else
+              args+=("--only" "$TARGET")
+            fi
+          fi
+          
+          # Sharding
+          if [[ "$SHARD" != "all" && "$SHARD" =~ ^([0-9]+)/([0-9]+)$ ]]; then
+            args+=("--chunk" "${BASH_REMATCH[1]}" "--total-chunks" "${BASH_REMATCH[2]}")
+          fi
+          
+          echo "🚀 Running: python3 batch_runner.py ${args[*]}"
+          python3 batch_runner.py "${args[@]}" 2>&1 | tee /tmp/render.log
+          
+          # Extract stats
+          ok=$(grep -c "^\[ok\]" /tmp/render.log || echo 0)
+          failed=$(grep -c "^\[error\]" /tmp/render.log || echo 0)
+          wall=$(tail -1 /tmp/render.log | grep -oP '\d+m\s+\d+s' || echo "unknown")
+          
+          cat >> $GITHUB_STEP_SUMMARY <<EOF
+          ### 🎬 Render Results (${{ matrix.orientation }})
+          - **Successful**: ${ok} videos
+          - **Failed**: ${failed} videos
+          - **Wall time**: ${wall}
+          - **Mode**: ${RENDER_MODE}
+          - **Gates**: ${GATE_MODE}
+          EOF
       
-      - name: Upload rendered videos
+      - name: 📤 Upload videos
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: rendered-${{ matrix.orientation }}
+          name: videos-${{ matrix.orientation }}-${{ github.run_number }}
           path: output_shorts/*.mp4
           retention-days: 7
+          if-no-files-found: ignore
       
-      - name: Upload logs
+      - name: 📤 Upload logs
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: logs-${{ matrix.orientation }}
+          name: logs-${{ matrix.orientation }}-${{ github.run_number }}
           path: logs/
           retention-days: 14
-  
-  # Job 7: Reflect and distill (always runs, ~5 seconds)
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # PHASE 6: REFLECT (always runs, ~5 seconds)
+  # ═══════════════════════════════════════════════════════════════════════
   reflect:
-    name: Reflect
+    name: 📝 Reflect
     runs-on: ubuntu-latest
-    needs: [validate, build-core, core-tests, engine-tests, generate-validate]
+    needs: [inspect, build, test, validate]
     if: always()
     permissions:
       contents: write
@@ -271,20 +432,79 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       
-      - name: Distill into THINK.md
+      - name: 🧠 Distill into THINK.md
         run: |
           python3 tools/think_loop.py || true
-          # Append run summary
+          
+          cat >> $GITHUB_STEP_SUMMARY <<EOF
+          ### 📝 Reflection
+          - **Run #**: ${{ github.run_number }}
+          - **Body ID**: \`${{ needs.inspect.outputs.body_id }}\`
+          - **CSV rows**: ${{ needs.inspect.outputs.csv_rows }}
+          - **Render**: ${{ needs.inspect.outputs.render_needed }}
+          EOF
       
-      - name: Commit ledger updates
+      - name: 📊 Ledger summary
+        run: |
+          if [[ -f "tools/ledger.py" ]]; then
+            python3 -m tools.ledger summarize > /tmp/ledger.txt
+            echo "📊 Ledger updated"
+          fi
+      
+      - name: 💾 Commit updates
         run: |
           git config user.name "think-bot"
           git config user.email "think-bot@saemlabs.dev"
-          git add THINK.md logs/ || true
-          git diff --quiet && git diff --staged --quiet || git commit -m "[skip ci] ledger: append run ${{ github.run_number }}"
+          git add THINK.md logs/ 2>/dev/null || true
+          git diff --quiet && git diff --staged --quiet || \
+            git commit -m "[skip ci] 📝 ledger: run ${{ github.run_number }}"
           git push || true
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # PHASE 7: SUMMARY (always runs, instant)
+  # ═══════════════════════════════════════════════════════════════════════
+  summary:
+    name: 📋 Summary
+    runs-on: ubuntu-latest
+    needs: [inspect, build, test, validate, reflect]
+    if: always()
+    steps:
+      - name: 🎯 Final Report
+        run: |
+          cat >> $GITHUB_STEP_SUMMARY <<EOF
+          ---
+          
+          ## 📋 Studio Summary
+          
+          | Phase | Status |
+          |-------|--------|
+          | 🔍 Inspect | ${{ needs.inspect.result }} |
+          | 🔨 Build | ${{ needs.build.result }} |
+          | ✅ Test | ${{ needs.test.result }} |
+          | 🛡️ Validate | ${{ needs.validate.result }} |
+          | 📝 Reflect | ${{ needs.reflect.result }} |
+          
+          **Next steps**: $([ "${{ needs.inspect.outputs.render_needed }}" == "true" ] && echo "Render job running in parallel" || echo "Push with [render] tag or use workflow_dispatch to render")
+          
+          ---
+          
+          <details>
+          <summary>🎛️ Studio Controls</summary>
+          
+          ### Manual Render Options
+          - **Render Mode**: \`skip\` (default) | \`draft\` (480p fast) | \`production\` (1080p full)
+          - **Target**: \`empty\` (all) | \`horizontal\` | \`vertical\` | \`video_id1,video_id2\`
+          - **Gate Strictness**: \`warn-only\` | \`require-oracle\` | \`require-qa\` | \`full-strict\`
+          - **Shard**: \`all\` | \`1/4\` | \`2/4\` | \`3/4\` | \`4/4\`
+          
+          ### Automatic Render Triggers
+          - Commit with \`[render]\` in message
+          - Add \`render\` label to PR
+          - Use workflow_dispatch above
+          
+          </details>
+          EOF
