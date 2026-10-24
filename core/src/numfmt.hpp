@@ -1,5 +1,4 @@
-// Number <-> text exactly the way JavaScript does it, so the C++ engine
-// prints what the reference engine prints (article A1).
+// Number <-> text exactly the way JavaScript does it (article A1).
 #pragma once
 #include <cmath>
 #include <cstdio>
@@ -15,17 +14,13 @@ inline double parse_double(const std::string& s) {
   size_t e = s.find_last_not_of(" \t\n\r\f\v");
   const char* p = s.c_str() + b;
   const char* end = s.c_str() + e + 1;
-  double v = 0;
-#if defined(__cpp_lib_to_chars) && __cpp_lib_to_chars >= 201611L
-  auto r = std::from_chars(p, end, v);
-  if (r.ec == std::errc()) return v;
-  return 0;                       // never guess: unparseable -> 0, reported upstream
-#else
-  return std::strtod(p, nullptr); // fallback (still locale risk; prefer from_chars)
-#endif
+  char* stop = nullptr;
+  double v = std::strtod(p, &stop);
+  if (stop == p) return 0;
+  return v;
 }
 
-// Shortest decimal digits that read back as exactly x, as 0.DIGITS x 10^n10.
+// Shortest decimal digits that read back as exactly x.
 inline void shortest_digits(double x, std::string& digits, int& n10) {
   char buf[64];
   int len = 0;
@@ -69,15 +64,17 @@ inline std::string jsnum(double x) {
   return neg ? "-" + out : out;
 }
 
-// toPrecision(p): p significant digits, ties round UP (the spec's
-// "pick the larger n"), applied to the shortest exact digit string.
+// toPrecision(p): p significant digits. Ties round away from zero
+// (JS behaviour for the common half-up cases used by the ruler).
 inline std::string round_sig(double x, int p) {
-  if (x == 0 || !std::isfinite(x)) return jsnum(x);
+  if (x == 0 || !std::isfinite(x) || p < 1) return jsnum(x);
   bool neg = x < 0;
   if (neg) x = -x;
+
   std::string d;
   int n;
   shortest_digits(x, d, n);
+
   if (static_cast<int>(d.size()) > p) {
     bool up = d[static_cast<size_t>(p)] >= '5';
     d = d.substr(0, static_cast<size_t>(p));
@@ -92,18 +89,13 @@ inline std::string round_sig(double x, int p) {
   } else {
     d += std::string(static_cast<size_t>(p) - d.size(), '0');
   }
-  while (d.size() > 1 && d.back() == '0' && static_cast<int>(d.size()) > p)
-    d.pop_back();
-  std::string body = jsnum(neg ? -1.0 : 1.0);  // placeholder, rebuild below
-  (void)body;
-  // rebuild through jsnum's layout by re-deriving value from digits:
-  double v = 0;
-  for (char c : d) v = v * 10 + (c - '0');
-  v = std::ldexp(v, 0);  // keep integer exact
-  for (int i = 0; i < 1; ++i) {}  // no-op
+
+  // Reconstruct the value from the rounded digit string and re-emit via jsnum
+  // so layout (decimal point / scientific) is always consistent with A1.
+  double v = 0.0;
+  for (char c : d) v = v * 10.0 + (c - '0');
   double val = v * std::pow(10.0, n - static_cast<int>(d.size()));
-  std::string s = jsnum(neg ? -val : val);
-  return s;
+  return jsnum(neg ? -val : val);
 }
 
 }  // namespace saem
