@@ -176,6 +176,15 @@ extern "C" SAEM_EXPORT const char* saem_call(const char* m, const char* a) {
   out = saem::call_json(m ? m : "", a ? a : "");
   return out.c_str();
 }
+
+// core.methods — required by tools/qcos_handshake.py (R22 / A6)
+const Registrar c0("core.methods", [](const Json&) -> Json {
+  Json o = Json::array();
+  for (const auto& m : saem::methods())
+    o.push(Json(m));
+  return o;
+});
+
 extern "C" SAEM_EXPORT const char* saem_methods(void) {
   static thread_local std::string out;
   saem::Json a = saem::Json::array();
