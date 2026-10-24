@@ -48,7 +48,7 @@ inline void run(Bits& b, const std::vector<Gate>& p, bool backwards = false) {
 inline void compute_copy_uncompute(Bits& b, const std::vector<Gate>& prog,
                                    uint8_t out, uint8_t dest) {
   run(b, prog);
-  saem::apply(b, gcnot(out, dest));   // ← qualify it
+  saem::apply(b, gcnot(out, dest));
   run(b, prog, true);
 }
 
