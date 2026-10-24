@@ -2,9 +2,12 @@
 // Feynman's cursor machines (ch.6) as processes, and Landauer's bill
 // (ch.5) as an entropy-debt ledger. Overwriting a blackboard entry erases
 // the old value; erasure costs kT ln 2 per bit, so the kernel counts the
-// bits it destroys and reports the debt instead of hiding it. Note the
-// debt grows even when you rewrite the identical value: the erasure
-// happened physically either way.
+// bits it destroys and reports the debt instead of hiding it.
+//
+// v2 FIX: canon() now escapes strings exactly like Json::dump (esc_to) and
+// like the JS ruler's JSON.stringify. Previously quotes/backslashes were
+// emitted raw, so kernel.soul and qcos.provenance diverged from the ruler
+// for any dynamic string (A1/A6 violation, the intermittent "core error").
 #pragma once
 #include <string>
 #include <utility>
@@ -16,15 +19,31 @@
 
 namespace saem {
 
-// Canonical text of a Json value, built only from the visible reading API
-// so C++ and the reference engine agree byte for byte. Numbers leave
-// through jsnum, exactly as the contract demands.
+// Canonical JSON text, byte-identical to Json::dump and to the ruler's
+// JSON.stringify: strings escaped, numbers through jsnum, object keys in
+// insertion order. Built only from the visible reading API.
 inline std::string canon(const Json& j) {
   switch (j.type()) {
     case Json::Null: return "null";
     case Json::Bool: return j.asBool() ? "true" : "false";
     case Json::Num: return jsnum(j.asNum());
-    case Json::Str: return "\"" + j.asStr() + "\"";
+    case Json::Str: {
+      std::string out;
+      out += '"';
+      for (unsigned char c : j.asStr()) {
+        if (c == '"' || c == '\\') { out += '\\'; out += static_cast<char>(c); }
+        else if (c == '\n') out += "\\n";
+        else if (c == '\t') out += "\\t";
+        else if (c == '\r') out += "\\r";
+        else if (c < 0x20) {
+          char b[8];
+          std::snprintf(b, sizeof b, "\\u%04x", c);
+          out += b;
+        } else out += static_cast<char>(c);
+      }
+      out += '"';
+      return out;
+    }
     case Json::Array: {
       std::string s = "[";
       const Json::Arr& a = j.arr();
@@ -36,7 +55,18 @@ inline std::string canon(const Json& j) {
       const Json::Obj& o = j.obj();
       for (size_t i = 0; i < o.size(); ++i) {
         if (i) s += ",";
-        s += "\"" + o[i].first + "\":" + canon(o[i].second);
+        std::string k;
+        k += '"';
+        for (unsigned char c : o[i].first) {
+          if (c == '"' || c == '\\') { k += '\\'; k += static_cast<char>(c); }
+          else if (c == '\n') k += "\\n";
+          else if (c == '\t') k += "\\t";
+          else if (c == '\r') k += "\\r";
+          else if (c < 0x20) { char b[8]; std::snprintf(b, sizeof b, "\\u%04x", c); k += b; }
+          else k += static_cast<char>(c);
+        }
+        k += '"';
+        s += k + ":" + canon(o[i].second);
       }
       return s + "}";
     }
