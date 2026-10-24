@@ -39,7 +39,6 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # ─────────────────────────────────────────────
   inspect:
     name: '🔍 Inspect'
     runs-on: ubuntu-latest
@@ -58,7 +57,6 @@ jobs:
         run: |
           rows=$(wc -l < content_batch.csv 2>/dev/null || echo 0)
           echo "rows=$rows" >> "$GITHUB_OUTPUT"
-
           render=false
           if [[ "\( {{ github.event_name }}" == "workflow_dispatch" && " \){{ github.event.inputs.render_mode }}" != "skip" ]]; then
             render=true
@@ -67,11 +65,9 @@ jobs:
             render=true
           fi
           echo "render=$render" >> "$GITHUB_OUTPUT"
-
           body=$(python3 tools/build.py id 2>/dev/null | head -c 12)
           [ -n "$body" ] || body=none
           echo "body=$body" >> "$GITHUB_OUTPUT"
-
           if [[ -d core/src && -n "$(ls -A core/src 2>/dev/null)" ]]; then
             layout=core/src
           elif [[ -d core && -n "$(ls -A core 2>/dev/null)" ]]; then
@@ -80,7 +76,6 @@ jobs:
             layout=missing
           fi
           echo "layout=$layout" >> "$GITHUB_OUTPUT"
-
           cat >> "$GITHUB_STEP_SUMMARY" <<EOF
           ## 🔍 Inspection Report
           - CSV rows: $rows · Render: $render
@@ -92,7 +87,6 @@ jobs:
           echo "::error::No C++ sources under core/src or core/ (R37)"
           exit 1
 
-  # ─────────────────────────────────────────────
   build:
     name: '🔨 Build Core'
     runs-on: ubuntu-latest
@@ -102,7 +96,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-
       - name: '⚙️ Compile (loud on empty)'
         id: compile
         run: |
@@ -111,7 +104,6 @@ jobs:
           python3 tools/build.py lib  2>&1 | tee -a build.log
           test -x build/saem_cli || { echo "::error::binary missing after build"; exit 1; }
           python3 tools/build.py verify 2>&1 | tee -a build.log
-
       - name: '🛠️ Auto-fixer (on failure)'
         if: failure()
         run: |
@@ -120,7 +112,6 @@ jobs:
           else
             echo "auto_fixer.py not yet present — skipping"
           fi
-
       - name: '🧪 Self-test (12 points)'
         run: |
           python3 - <<'PY'
@@ -141,7 +132,6 @@ jobs:
           print("checks:", st.get("checks"), "failed:", st.get("failed"))
           sys.exit(0 if (env.get("ok") and st.get("ok")) else 1)
           PY
-
       - name: '📦 Upload core'
         uses: actions/upload-artifact@v4
         with:
@@ -149,7 +139,6 @@ jobs:
           path: build/
           retention-days: 7
 
-  # ─────────────────────────────────────────────
   validate:
     name: '🛡️ Validate CSV'
     runs-on: ubuntu-latest
@@ -166,7 +155,6 @@ jobs:
           ! grep -q "\[ERROR\]" /tmp/schema.log
           python3 tools/physics_oracle.py content_batch.csv || true
 
-  # ─────────────────────────────────────────────
   test:
     name: '✅ Test Suite'
     runs-on: ubuntu-latest
@@ -192,7 +180,6 @@ jobs:
           pip install -q pytest
           python3 -m pytest -q
 
-  # ─────────────────────────────────────────────
   render:
     name: '🎥 Render ${{ matrix.orientation }}'
     runs-on: ubuntu-latest
@@ -251,7 +238,6 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
-  # ─────────────────────────────────────────────
   reflect:
     name: '📝 Reflect'
     runs-on: ubuntu-latest
@@ -292,7 +278,6 @@ jobs:
           layout=\( {{ needs.inspect.outputs.layout }} body= \){{ needs.inspect.outputs.body_id }}
           EOF
 
-  # ─────────────────────────────────────────────
   summary:
     name: '📋 Summary'
     runs-on: ubuntu-latest
