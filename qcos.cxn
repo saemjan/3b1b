@@ -87,3 +87,58 @@
   out Any
 } gate
   cpp "qcos_api::gate(a)"
+
+
+@method core.methods {
+  out Any
+} pure
+  cpp "/* filled by Registrar */"
+
+@method qcos.boot {
+  out Any
+} pure
+  cpp "/* qcos_reg */"
+
+@method qcos.read {
+  in  key : Key required
+  out Any
+} resident
+
+@method qcos.snapshot {
+  out Any
+} resident
+
+@method qcos.provenance {
+  out Any
+} resident
+
+@method qcos.lower {
+  in  want  : string required
+  in  key   : Key = ""
+  in  value : Any = {}
+  in  target: string = "cpp"
+  out Any
+} pure
+
+@method qcos.cost {
+  in  cir : Any required
+  out Any
+} pure
+
+@method gen.topics { out Any } pure
+@method gen.templates { out Any } pure
+@method gen.demoBank {
+  in  seed : Seed = 11
+  in  y0   : int32 = 0
+  in  y1   : int32 = 0
+  out Any
+} pure
+@method gen.vectors { out Any } pure
+@method gen.hash32 {
+  in  s : string required
+  out number
+} pure
+@method gen.makeBatch {
+  in  items : Any required
+  out Any
+} pure
