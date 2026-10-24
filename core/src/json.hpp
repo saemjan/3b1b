@@ -2,6 +2,7 @@
 // order, strings are UTF-8, numbers print in their shortest round-trip
 // form through jsnum, missing fields never throw.
 #pragma once
+#include <cstdio>   // for snprintf used in esc_to
 #include <cmath>
 #include <cstdint>
 #include <stdexcept>
