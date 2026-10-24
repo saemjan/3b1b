@@ -112,5 +112,28 @@ inline std::vector<std::string> split(const std::string& s, char delim) {
     while (std::getline(ss, item, delim)) out.push_back(item);
     return out;
 }
+// at the end of util.hpp, inside namespace saem
+
+struct Rng {
+  uint64_t s;
+  explicit Rng(uint64_t seed = 0x5AEE) : s(seed ? seed : 0x5AEE) {}
+  uint64_t next() {
+    s ^= s << 13; s ^= s >> 7; s ^= s << 17;
+    return s;
+  }
+  double uniform01() {
+    return double(next() >> 11) * (1.0 / double(1ULL << 53));
+  }
+};
+
+inline uint32_t hash32(const std::string& s) {
+  uint32_t h = 0x811c9dc5u;
+  for (unsigned char c : s) { h ^= c; h *= 0x01000193u; }
+  return h;
+}
+
+inline double js_round(double x) {          // Math.round parity
+  return std::floor(x + 0.5);
+}
 
 }  // namespace saem
