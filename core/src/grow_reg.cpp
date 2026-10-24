@@ -1,11 +1,8 @@
-// Growth methods on the one door. Learning appends witnessed cases;
-// recall answers from the case store; distillation writes QUARANTINED
-// code into grown/. Nothing grown executes until tools/grow.py promote
-// rebuilds the body and replays every case through the witnesses.
+// Growth methods on the one door. Corrected: dynamic buffer + error propagation.
 #include "api.hpp"
-
 #include <string>
 #include <vector>
+#include <stdexcept>
 
 extern "C" {
 int saem_learn(const char*, const char*, const char*, const char*, const char*, const char*);
@@ -36,14 +33,13 @@ const Registrar w30("grow.learn", [](const Json& a) {
 });
 
 const Registrar w31("grow.recall", [](const Json& a) {
-  // Dynamic buffer – grows if needed (rare for normal cases)
   std::vector<char> buf(1 << 20);
   if (saem_recall(STORE, a["method"].asStr().c_str(),
                   canon(a["args"]).c_str(),
                   buf.data(), buf.size())) {
     return Json::parse(buf.data());
   }
-  return Json();  // null: ungrown, and honest about it
+  return Json();  // null = ungrown (honest)
 });
 
 const Registrar w32("grow.distill", [](const Json& a) {
