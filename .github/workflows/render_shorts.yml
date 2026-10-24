@@ -265,7 +265,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0          # needed for safe rebase
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -280,7 +280,6 @@ jobs:
             echo "[reflect] nothing to commit"
           else
             git commit -m "[skip ci] ledger: run ${{ github.run_number }}"
-            # race-safe push: pull --rebase then push; never force
             git pull --rebase origin main || true
             git push origin HEAD:main || echo "::warning::ledger push failed (non-fatal)"
           fi
