@@ -7,3 +7,4 @@ target_include_directories(saemcli PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 install(TARGETS saemcli RUNTIME DESTINATION bin)
 add_executable(qcos_test ../tests/qcos_test.cpp gen.cpp)
 target_include_directories(qcos_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+add_library(saem SHARED api.cpp qcos_api.cpp gen.cpp)  with  SAEM_SOURCE_ID
