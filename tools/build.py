@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Builds the Saem core with whatever C++ compiler the machine has.
-Stdlib only. v3: ONE source dir (core/src, falling back to core/ for old
-checkouts); TWO binaries from one body: build/saem_cli (line protocol) and
-build/saemcli (legacy subcommands for core_processor.py / math_brain_bridge.py);
-plus build/libsaem.so. Zero sources is a loud failure (R37).
+Stdlib only. v4 (after run #179): creates EVERY directory it writes to
+(build/ and build/obj/) before the first compile; a fresh runner must
+never die in the assembler. One source dir (core/src, fallback core/),
+two binaries from one body (saem_cli line protocol + saemcli legacy),
+plus libsaem.so. Zero sources is a loud failure (R37).
 
     python3 tools/build.py cli|lib|all|id|verify
 """
@@ -16,6 +17,7 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CANDIDATES = [os.path.join(ROOT, "core", "src"), os.path.join(ROOT, "core")]
 OUT = os.path.join(ROOT, "build")
+OBJ = os.path.join(OUT, "obj")
 STD = ["-std=c++17"]
 WARN = ["-Wall", "-Wextra", "-Wpedantic"]
 CODE_EXTS = (".cpp", ".c")
@@ -75,7 +77,18 @@ def _newer(target, deps):
 
 
 def _obj(p, d):
-    return os.path.join(OUT, "obj", os.path.relpath(p, d).replace(os.sep, "_") + ".o")
+    return os.path.join(OBJ, os.path.relpath(p, d).replace(os.sep, "_") + ".o")
+
+
+def _cc(cxx, src, obj, flags, headers):
+    if not _newer(obj, [src] + headers):
+        return
+    os.makedirs(os.path.dirname(obj), exist_ok=True)   # v4: never die in assembler
+    r = subprocess.run([cxx] + STD + WARN + flags + ["-c", src, "-o", obj],
+                       capture_output=True, text=True)
+    sys.stderr.write(r.stderr)
+    if r.returncode:
+        raise SystemExit("compile failed: " + os.path.basename(src))
 
 
 def build(kind):
@@ -94,20 +107,15 @@ def build(kind):
     if not any(os.path.basename(p) == "cli.cpp" for p in code):
         raise SystemExit("[build] cli.cpp missing: the door has no process (R37)")
     os.makedirs(OUT, exist_ok=True)
+    os.makedirs(OBJ, exist_ok=True)                    # v4: the #179 fix
     open(os.path.join(OUT, "source_id.txt"), "w").write(sid + "\n")
     print(f"[build] layout={os.path.relpath(d, ROOT)} files={len(files)} cxx={cxx}")
     flags = ['-DSAEM_SOURCE_ID="%s"' % sid, "-I", d]
-    objs = {}
+    body_objs = []
     for p in body:
         o = _obj(p, d)
-        if _newer(o, [p] + headers):
-            r = subprocess.run([cxx] + STD + WARN + flags + ["-c", p, "-o", o],
-                               capture_output=True, text=True)
-            sys.stderr.write(r.stderr)
-            if r.returncode:
-                raise SystemExit("compile failed: " + os.path.basename(p))
-        objs[p] = o
-    body_objs = list(objs.values())
+        _cc(cxx, p, o, flags, headers)
+        body_objs.append(o)
     if kind in ("cli", "all"):
         for bin_name, main_file in MAINS.items():
             mp = os.path.join(d, main_file)
@@ -115,12 +123,7 @@ def build(kind):
                 print(f"[build] skip {bin_name}: {main_file} absent")
                 continue
             mo = _obj(mp, d)
-            if _newer(mo, [mp] + headers):
-                r = subprocess.run([cxx] + STD + WARN + flags + ["-c", mp, "-o", mo],
-                                   capture_output=True, text=True)
-                sys.stderr.write(r.stderr)
-                if r.returncode:
-                    raise SystemExit("compile failed: " + main_file)
+            _cc(cxx, mp, mo, flags, headers)
             out = os.path.join(OUT, bin_name)
             if _newer(out, body_objs + [mo]):
                 subprocess.run([cxx] + STD + WARN + body_objs + [mo, "-o", out],
