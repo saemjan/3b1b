@@ -1,7 +1,0 @@
-# This file is used internally by FFMPEG.
-file 'file:/workspaces/shorts/media/videos/480p15/partial_movie_files/UniversalPhysicsScene/26401960_3313652783_3116427373.mp4'
-file 'file:/workspaces/shorts/media/videos/480p15/partial_movie_files/UniversalPhysicsScene/2281042420_2968638142_3405853725.mp4'
-file 'file:/workspaces/shorts/media/videos/480p15/partial_movie_files/UniversalPhysicsScene/1374417188_1904016737_213050725.mp4'
-file 'file:/workspaces/shorts/media/videos/480p15/partial_movie_files/UniversalPhysicsScene/3594131764_3231028595_2320094203.mp4'
-file 'file:/workspaces/shorts/media/videos/480p15/partial_movie_files/UniversalPhysicsScene/3187540726_1501321774_1479172201.mp4'
-file 'file:/workspaces/shorts/media/videos/480p15/partial_movie_files/UniversalPhysicsScene/4060789828_314165562_1126861767.mp4'
