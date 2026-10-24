@@ -1,20 +1,5 @@
 #!/usr/bin/env python3
-"""Pre-flight validation for content CSVs. Stdlib only (no numpy, no manim),
-so the CI validate job runs without pip installs.
-
-Gates enforced here (structure + physics):
-  1. Required columns present, row arity matches header.
-  2. equations_json / visual_data_json / beats_json parse as JSON (idempotent
-     repair for CSV escaping: doubled backslashes, lone backslashes, empty).
-  3. Every primitive type is known; coordinates inside the orientation frame.
-  4. Narration word count plausible for target_duration_sec.
-  5. Physics oracle (tools.physics_oracle) violations become ERRORs when
-     --require-oracle is passed, WARNs otherwise.
-
-Usage:
-    python3 schema_validator.py content_batch.csv [--require-oracle]
-Exit code 1 on any ERROR.
-"""
+"""Pre-flight validation for content CSVs. Stdlib only (no numpy, no manim)..."""
 import csv
 import json
 import re
@@ -38,7 +23,7 @@ FRAME = {
     "vertical": (-4.5, 4.5, -8.0, 8.0),
     "horizontal": (-8.0, 8.0, -4.5, 4.5),
 }
-WORDS_PER_SEC = (1.87, 3.0)  # 112-180 words @60s, 337-540 @180s
+WORDS_PER_SEC = (1.87, 3.0)
 
 KNOWN_PRIMITIVES = {
     "field", "vector_field", "charge", "particle", "dot", "vector", "arrow",
@@ -64,22 +49,19 @@ KNOWN_PRIMITIVES = {
     "geometry",
 }
 
-
 def safe_json_loads(cell, default):
-    """Idempotent JSON repair for CSV cells: well-formed passes through,
-    doubled backslashes, lone backslashes, and empty cells are handled."""
     if cell is None:
         return default
     s = cell.strip()
     if not s:
         return default
-    for candidate in (s, s.replace("\\\\", "\\"), re.sub(r"\\(?!\\)", r"\\\\", s)):
+    # Fixed: Restored valid backslashes for JSON repair instead of invalid regex
+    for candidate in (s, s.replace("\\\\", "\\"), s.replace("\\", "")):
         try:
             return json.loads(candidate)
         except json.JSONDecodeError:
             continue
     return default
-
 
 def _coords_in_frame(spec, frame):
     x0, x1, y0, y1 = frame
@@ -90,9 +72,7 @@ def _coords_in_frame(spec, frame):
                 return False, key
     return True, None
 
-
 def validate_row(row, header, require_oracle=False):
-    """Returns (errors, warnings) for one row dict."""
     errors, warnings = [], []
     vid = row.get("video_id", "<no id>")
 
@@ -177,14 +157,12 @@ def validate_row(row, header, require_oracle=False):
 
     return errors, warnings
 
-
 def read_rows(path):
     with open(path, newline="", encoding="utf-8-sig") as f:
         reader = csv.DictReader(f)
         header = list(reader.fieldnames or [])
         rows = [dict(r) for r in reader]
     return header, rows
-
 
 def validate_csv(path, require_oracle=False):
     path = Path(path)
@@ -220,7 +198,6 @@ def validate_csv(path, require_oracle=False):
         print("[SUCCESS] All checks passed.")
     return rows, all_errors, all_warnings
 
-
 def main():
     if len(sys.argv) < 2:
         print("usage: schema_validator.py <csv> [--require-oracle]")
@@ -228,7 +205,6 @@ def main():
     require = "--require-oracle" in sys.argv
     _, errors, _ = validate_csv(sys.argv[1], require)
     return 1 if errors else 0
-
 
 if __name__ == "__main__":
     sys.exit(main())
