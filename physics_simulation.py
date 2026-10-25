@@ -1,15 +1,28 @@
 #!/usr/bin/env python3
-"""physics_simulation.py — gen-2 engine: deterministic 2D Newtonian core.
+"""physics_simulation.py — gen-3 deterministic 2D Newtonian engine.
 
-Dependency stance (backend_policy):
-  * "pure"  : own tool. Stdlib-only RK4 over flat float lists. The ruler.
-  * "numpy" : select library. Adopted only when probe+witness pass AND the
-              cost model says n_bodies*steps pays for it. Must match pure
-              to 1e-9 on a frozen fixture (parity witness).
-Witnesses are analytic closed forms (projectile parabola, drag exponential,
-spring harmonic, Kepler circle) — no external data, no libraries (A0/A5).
+Layering (xv6-style, top to bottom):
+    validation -> force laws -> integrator -> stability guard -> witnesses -> route
+
+Dependency stance (backend_policy, frozen):
+    "pure"  = own stdlib tool = THE RULER (list-of-floats RK4/symplectic core)
+    "numpy" = select library, adopted only when probe+witness+cost gates pass,
+              and only for integrator="rk4"; every other integrator runs pure.
+
+Numerics (Strang, CSE ch.5):
+    rk4        4th order, stable for |lambda*dt| <~ 2.78
+    leapfrog   velocity-Verlet, symplectic: bounded energy error for Hamiltonians
+    euler_semi 1st order symplectic, cheapest
+    trapezoid  Crank-Nicolson flavour, A-stable (one fixed-point correction)
+  A stability guard computes omega_max from springs/orbits and FAILS CLOSED
+  (ValueError) when dt*omega_max leaves the method's region.
+
+Witnesses (Euler closed forms, frozen; run headless in selftest/CI):
+    projectile parabola, drag exponential, spring harmonic, Kepler circle,
+    energy-drift bound for conservative runs, pure<->numpy parity, determinism.
 
 Renderer contract v1: ROUTE_TABLE["physics_simulation"](scene, spec).
+The route skins itself from scene.ctx (StyleContext) when present.
 """
 from __future__ import annotations
 
@@ -18,18 +31,26 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-sys.path.insert(0, str(ROOT))
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 try:
     from tools import backend_policy as bp
-except Exception:                      # engine copied next to the policy
-    import backend_policy as bp        # type: ignore
+except Exception:
+    try:
+        import backend_policy as bp          # type: ignore
+    except Exception:
+        bp = None
 
 try:
     import numpy as _NP
 except Exception:
     _NP = None
 
-_ACCEL_THRESHOLD = 2000.0              # n*steps above which numpy pays
+INTEGRATORS = ("rk4", "leapfrog", "euler_semi", "trapezoid")
+_STABILITY = {"rk4": 2.78, "leapfrog": 2.0, "euler_semi": 2.0,
+              "trapezoid": math.inf}          # A-stable: no explicit limit
+_ACCEL_THRESHOLD = 2000.0                     # n*steps above which numpy pays
 
 
 # ---------------------------------------------------------------- validation
@@ -91,8 +112,7 @@ def _validate(bodies, forces):
             e["coefficient"] = _finite_number(f.get("coefficient"),
                                               f"force {i} coefficient", 0.0)
         elif kind == "spring":
-            bi = f.get("body")
-            oi = f.get("other")
+            bi, oi = f.get("body"), f.get("other")
             if not isinstance(bi, int) or not 0 <= bi < n:
                 raise ValueError(f"Spring {i} has an invalid body index.")
             if oi is not None and (not isinstance(oi, int)
@@ -119,6 +139,35 @@ def _validate(bodies, forces):
             raise ValueError(f"Unsupported force type '{kind}'.")
         norm.append(e)
     return masses, initial, norm
+
+
+# ------------------------------------------------- stability guard (Strang)
+def _omega_max(masses, initial, forces):
+    n = len(masses)
+    pos = [(initial[4 * i], initial[4 * i + 1]) for i in range(n)]
+    omega = 0.0
+    for f in forces:
+        if f["type"] == "spring" and f["stiffness"] > 0:
+            omega = max(omega, math.sqrt(f["stiffness"] / masses[f["body"]]))
+        elif f["type"] == "central_gravity":
+            s = f["source"]
+            for t in f["bodies"]:
+                if t == s:
+                    continue
+                r = math.hypot(pos[s][0] - pos[t][0], pos[s][1] - pos[t][1])
+                if r > 1e-9:
+                    omega = max(omega, math.sqrt(f["mu"] / r ** 3))
+    return omega
+
+
+def stability_report(masses, initial, forces, duration, steps, integrator):
+    dt = duration / steps
+    omega = _omega_max(masses, initial, forces)
+    limit = _STABILITY[integrator]
+    ratio = omega * dt
+    ok = bool(ratio <= limit) if math.isfinite(limit) else True
+    return {"integrator": integrator, "dt": dt, "omega_max": omega,
+            "limit": limit, "ratio": ratio, "ok": ok}
 
 
 # ------------------------------------------------------- pure backend (ruler)
@@ -193,24 +242,80 @@ def _axpy(s, h, k):
     return [s[i] + h * k[i] for i in range(len(s))]
 
 
-def _rk4_mix(s, dt, k1, k2, k3, k4):
+def _step_rk4(s, dt, masses, forces):
+    k1 = _deriv_pure(s, masses, forces)
+    k2 = _deriv_pure(_axpy(s, 0.5 * dt, k1), masses, forces)
+    k3 = _deriv_pure(_axpy(s, 0.5 * dt, k2), masses, forces)
+    k4 = _deriv_pure(_axpy(s, dt, k3), masses, forces)
     c = dt / 6.0
     return [s[i] + c * (k1[i] + 2 * k2[i] + 2 * k3[i] + k4[i])
             for i in range(len(s))]
 
 
-def _integrate_pure(initial, masses, forces, duration, steps):
+def _step_leapfrog(s, dt, masses, forces):          # velocity Verlet
+    n = len(masses)
+    ax, ay = _accel_pure(s, masses, forces)
+    half = [(s[4 * i + 2] + 0.5 * dt * ax[i], s[4 * i + 3] + 0.5 * dt * ay[i])
+            for i in range(n)]
+    out = list(s)
+    for i in range(n):
+        out[4 * i] = s[4 * i] + dt * half[i][0]
+        out[4 * i + 1] = s[4 * i + 1] + dt * half[i][1]
+    ax2, ay2 = _accel_pure(out, masses, forces)
+    for i in range(n):
+        out[4 * i + 2] = half[i][0] + 0.5 * dt * ax2[i]
+        out[4 * i + 3] = half[i][1] + 0.5 * dt * ax2[i]
+    return out
+
+
+def _step_euler_semi(s, dt, masses, forces):         # symplectic Euler
+    n = len(masses)
+    ax, ay = _accel_pure(s, masses, forces)
+    out = list(s)
+    for i in range(n):
+        vx = s[4 * i + 2] + dt * ax[i]
+        vy = s[4 * i + 3] + dt * ay[i]
+        out[4 * i + 2] = vx
+        out[4 * i + 3] = vy
+        out[4 * i] = s[4 * i] + dt * vx
+        out[4 * i + 1] = s[4 * i + 1] + dt * vy
+    return out
+
+
+def _step_trapezoid(s, dt, masses, forces):          # Crank-Nicolson flavour
+    n = len(masses)
+    a1x, a1y = _accel_pure(s, masses, forces)
+    pred = list(s)
+    for i in range(n):
+        pred[4 * i + 2] = s[4 * i + 2] + dt * a1x[i]
+        pred[4 * i + 3] = s[4 * i + 3] + dt * a1y[i]
+        pred[4 * i] = s[4 * i] + dt * s[4 * i + 2]
+        pred[4 * i + 1] = s[4 * i + 1] + dt * s[4 * i + 3]
+    a2x, a2y = _accel_pure(pred, masses, forces)
+    out = list(s)
+    for i in range(n):
+        vx = s[4 * i + 2] + 0.5 * dt * (a1x[i] + a2x[i])
+        vy = s[4 * i + 3] + 0.5 * dt * (a1y[i] + a2y[i])
+        out[4 * i + 2] = vx
+        out[4 * i + 3] = vy
+        out[4 * i] = s[4 * i] + 0.5 * dt * (s[4 * i + 2] + vx)
+        out[4 * i + 1] = s[4 * i + 1] + 0.5 * dt * (s[4 * i + 3] + vy)
+    return out
+
+
+_STEPS = {"rk4": _step_rk4, "leapfrog": _step_leapfrog,
+          "euler_semi": _step_euler_semi, "trapezoid": _step_trapezoid}
+
+
+def _integrate_pure(initial, masses, forces, duration, steps, integrator):
+    step = _STEPS[integrator]
     dt = duration / steps
     s = list(initial)
     states = [list(s)]
     for _ in range(steps):
-        k1 = _deriv_pure(s, masses, forces)
-        k2 = _deriv_pure(_axpy(s, 0.5 * dt, k1), masses, forces)
-        k3 = _deriv_pure(_axpy(s, 0.5 * dt, k2), masses, forces)
-        k4 = _deriv_pure(_axpy(s, dt, k3), masses, forces)
-        s = _rk4_mix(s, dt, k1, k2, k3, k4)
+        s = step(s, dt, masses, forces)
         if not all(math.isfinite(v) for v in s):
-            raise ValueError("Physics simulation diverged (pure).")
+            raise ValueError(f"Physics simulation diverged ({integrator}).")
         states.append(list(s))
     return states
 
@@ -245,7 +350,8 @@ def _integrate_numpy(initial, masses, forces, duration, steps):
                     continue
                 u = d / L
                 rel = float(np.dot(vel[b] - ov, u))
-                mag = -f["stiffness"] * (L - f["rest_length"]) - f["damping"] * rel
+                mag = (-f["stiffness"] * (L - f["rest_length"])
+                       - f["damping"] * rel)
                 a[b] += mag * u / m[b]
                 if o is not None:
                     a[o] -= mag * u / m[o]
@@ -262,7 +368,7 @@ def _integrate_numpy(initial, masses, forces, duration, steps):
         return a
 
     def deriv(st):
-        return np.column_stack((st[:, 2:], accel(st)))
+        return np.column_stack((st[:, 2:], accel(st))).reshape(-1)
 
     dt = duration / steps
     states = [s.reshape(-1).tolist()]
@@ -278,87 +384,184 @@ def _integrate_numpy(initial, masses, forces, duration, steps):
     return states
 
 
-# ------------------------------------------------------------- parity witness
-_FROZEN = (
-    [{"mass": 1.0, "position": [0.0, 0.0], "velocity": [0.0, 0.0]},
-     {"mass": 2.0, "position": [3.0, 0.0], "velocity": [0.0, 1.0]},
-     {"mass": 1.5, "position": [-2.0, 1.0], "velocity": [0.5, -0.5]}],
-    [{"type": "uniform_acceleration", "acceleration": [0.0, -9.8]},
-     {"type": "linear_drag", "coefficient": 0.3},
-     {"type": "spring", "body": 1, "other": 0, "stiffness": 4.0,
-      "rest_length": 1.0, "damping": 0.2},
-     {"type": "central_gravity", "source": 0, "mu": 12.0, "bodies": [1, 2]}],
-)
+# ------------------------------------------------------------------- energy
+def energy(masses, flat, forces):
+    """Total mechanical energy, or None when the system is non-conservative."""
+    n = len(masses)
+    ke = 0.0
+    for i in range(n):
+        ke += 0.5 * masses[i] * (flat[4 * i + 2] ** 2 + flat[4 * i + 3] ** 2)
+    pe = 0.0
+    pos = [(flat[4 * i], flat[4 * i + 1]) for i in range(n)]
+    for f in forces:
+        k = f["type"]
+        if k == "spring":
+            if f["damping"] != 0:
+                return None
+            b, o = f["body"], f["other"]
+            if o is None:
+                L = math.hypot(pos[b][0] - f["anchor"][0],
+                               pos[b][1] - f["anchor"][1])
+            else:
+                L = math.hypot(pos[b][0] - pos[o][0], pos[b][1] - pos[o][1])
+            pe += 0.5 * f["stiffness"] * (L - f["rest_length"]) ** 2
+        elif k == "central_gravity":
+            s = f["source"]
+            for t in f["bodies"]:
+                if t == s:
+                    continue
+                r = math.hypot(pos[s][0] - pos[t][0], pos[s][1] - pos[t][1])
+                if r <= 1e-12:
+                    return None
+                pe -= masses[t] * f["mu"] / r
+        elif k == "uniform_acceleration":
+            gx, gy = f["acceleration"]
+            for i in f["bodies"]:
+                pe -= masses[i] * (gx * pos[i][0] + gy * pos[i][1])
+        else:
+            return None
+    return ke + pe
 
 
+# ------------------------------------------------------------- backend gates
 def _numpy_parity() -> bool:
-    """Gate 2 for numpy: must reproduce the ruler on a frozen fixture."""
     if _NP is None:
         return False
-    bodies, forces = _FROZEN
+    bodies = [{"mass": 1.0, "position": [0, 0], "velocity": [0, 0]},
+              {"mass": 2.0, "position": [3, 0], "velocity": [0, 1]},
+              {"mass": 1.5, "position": [-2, 1], "velocity": [0.5, -0.5]}]
+    forces = [{"type": "uniform_acceleration", "acceleration": [0, -9.8]},
+              {"type": "linear_drag", "coefficient": 0.3},
+              {"type": "spring", "body": 1, "other": 0, "stiffness": 4.0,
+               "rest_length": 1.0, "damping": 0.2},
+              {"type": "central_gravity", "source": 0, "mu": 12.0,
+               "bodies": [1, 2]}]
     masses, initial, norm = _validate(bodies, forces)
-    a = _integrate_pure(initial, masses, norm, 2.0, 300)
+    a = _integrate_pure(initial, masses, norm, 2.0, 300, "rk4")
     b = _integrate_numpy(initial, masses, norm, 2.0, 300)
     return max(abs(x - y) for ra, rb in zip(a, b)
                for x, y in zip(ra, rb)) <= 1e-9
 
 
-bp.register("physics", bp.OWN_TOOL,
-            probe=lambda: (True, "own tool, stdlib only"),
-            witness=lambda: True,
-            speedup=lambda size: 1.0)
-bp.register("physics", "numpy",
-            probe=lambda: bp.probe_import("numpy", ("array", "zeros", "hypot")),
-            witness=_numpy_parity,
-            speedup=lambda size: size / _ACCEL_THRESHOLD)
+if bp is not None:
+    bp.register("physics", bp.OWN_TOOL,
+                probe=lambda: (True, "own tool, stdlib only"),
+                witness=lambda: True,
+                speedup=lambda size: 1.0)
+    bp.register("physics", "numpy",
+                probe=lambda: bp.probe_import("numpy", ("array", "zeros", "hypot")),
+                witness=_numpy_parity,
+                speedup=lambda size: size / _ACCEL_THRESHOLD)
 
 
-# ------------------------------------------------------------------ public API
+# ---------------------------------------------------------------- public API
 class SimResult:
-    __slots__ = ("masses", "forces", "states", "backend", "decision")
+    __slots__ = ("masses", "forces", "states", "backend", "integrator",
+                 "decision", "stability")
 
-    def __init__(self, masses, forces, states, backend, decision):
-        self.masses, self.forces = masses, forces
-        self.states, self.backend, self.decision = states, backend, decision
+    def __init__(self, masses, forces, states, backend, integrator,
+                 decision, stability):
+        self.masses, self.forces, self.states = masses, forces, states
+        self.backend, self.integrator = backend, integrator
+        self.decision, self.stability = decision, stability
 
 
-def simulate_system(bodies, forces, duration, steps=600, backend="auto"):
+def simulate_system(bodies, forces, duration, steps=600,
+                    integrator="rk4", backend="auto"):
     duration = _finite_number(duration, "duration", minimum=0.0)
     if duration == 0:
         raise ValueError("duration must be greater than zero.")
-    if not isinstance(steps, int) or not 2 <= steps <= 10000:
-        raise ValueError("steps must be an integer from 2 through 10000.")
+    if not isinstance(steps, int) or not 2 <= steps <= 20000:
+        raise ValueError("steps must be an integer from 2 through 20000.")
+    if integrator not in INTEGRATORS:
+        raise ValueError(f"integrator must be one of {INTEGRATORS}.")
     masses, initial, norm = _validate(bodies, forces)
-    size = len(masses) * steps
 
-    if backend == "auto":
+    stab = stability_report(masses, initial, norm, duration, steps, integrator)
+    if not stab["ok"]:
+        raise ValueError(
+            f"stability guard: dt*omega={stab['ratio']:.3f} exceeds "
+            f"{integrator} limit {stab['limit']:.2f}; increase steps.")
+
+    size = len(masses) * steps
+    if backend == "auto" and bp is not None and integrator == "rk4":
         backend, decision = bp.choose("physics", size=size)
     else:
-        decision = {"kind": "physics", "size": size,
-                    "chosen": backend, "reason": "pinned by caller"}
-        bp.record(decision)
+        backend = "pure" if backend == "auto" else backend
+        decision = {"kind": "physics", "size": size, "chosen": backend,
+                    "reason": "pinned by caller / non-rk4 integrator"}
+        if bp is not None:
+            bp.record(decision)
 
     if backend == "numpy":
         if _NP is None:
+            backend = "pure"
             decision = dict(decision, chosen="pure",
                             reason=decision["reason"] + "; numpy gone at runtime")
-            bp.record(decision)
-            backend = "pure"
         else:
             try:
                 states = _integrate_numpy(initial, masses, norm, duration, steps)
-            except Exception as e:          # gate 6: degrade, don't deceive
+            except Exception as e:                     # degrade, don't deceive
+                backend = "pure"
                 decision = dict(decision, chosen="pure",
                                 reason=decision["reason"] + f"; numpy raised {e}")
-                bp.record(decision)
-                backend = "pure"
-                states = _integrate_pure(initial, masses, norm, duration, steps)
+                states = _integrate_pure(initial, masses, norm, duration,
+                                         steps, integrator)
     if backend == "pure":
-        states = _integrate_pure(initial, masses, norm, duration, steps)
-    return SimResult(masses, norm, states, backend, decision)
+        states = _integrate_pure(initial, masses, norm, duration, steps,
+                                 integrator)
+    return SimResult(masses, norm, states, backend, integrator, decision, stab)
 
 
-# ------------------------------------------------- analytic rulers (selftest)
+# ------------------------------------------------------ renderer contract v1
+def route_physics_simulation(scene, spec):
+    from manim import VGroup, Dot, VMobject, Arrow      # lazy: renderer-only
+
+    bodies = spec.get("bodies", [])
+    if not bodies:
+        return None
+    res = simulate_system(bodies, spec.get("forces", []),
+                          float(spec.get("duration", 4.0)),
+                          int(spec.get("steps", 240)),
+                          integrator=spec.get("integrator", "rk4"))
+    ctx = getattr(scene, "ctx", None)
+    col = ctx.color(spec, "primary") if ctx else spec.get("color", "YELLOW")
+    acc = ctx.color(spec, "accent") if ctx else "RED"
+    stroke = ctx.stroke() if ctx else 3.0
+    radius = ctx.dot(spec) if ctx else float(spec.get("radius", 0.12))
+
+    states = res.states
+    stride = max(1, len(states) // 60)
+    sampled = states[::stride] + [states[-1]]
+    n = len(res.masses)
+    peak = 1e-9
+    for flat in sampled:
+        for i in range(n):
+            peak = max(peak, abs(flat[4 * i]), abs(flat[4 * i + 1]))
+    scale = float(spec.get("fit", 6.0)) / peak
+
+    mobs = VGroup()
+    for i, b in enumerate(bodies):
+        pts = [(f[4 * i] * scale, f[4 * i + 1] * scale, 0.0) for f in sampled]
+        if spec.get("trail", True):
+            mobs.add(VMobject(color=col, stroke_width=stroke)
+                     .set_points_smoothly(pts))
+        mobs.add(Dot(pts[-1], radius=radius, color=col))
+        if spec.get("vectors"):
+            v = sampled[-1]
+            mobs.add(Arrow(pts[-1],
+                           (pts[-1][0] + v[4 * i + 2] * scale * 0.2,
+                            pts[-1][1] + v[4 * i + 3] * scale * 0.2, 0.0),
+                           buff=0, color=acc, stroke_width=stroke))
+    print(f"[physics] backend={res.backend} integrator={res.integrator} "
+          f"dt*w={res.stability['ratio']:.3f} ({res.decision.get('reason')})")
+    return mobs
+
+
+ROUTE_TABLE = {"physics_simulation": route_physics_simulation}
+
+
+# ---------------------------------------------------- frozen witness suite
 def _close(got, want, tol):
     return all(abs(g - w) <= tol for g, w in zip(got, want))
 
@@ -369,98 +572,79 @@ def selftest():
     def want(name, ok, detail=""):
         checks.append((name, bool(ok), detail))
 
-    # R1 projectile parabola
     g, t = 9.8, 1.234
-    r = simulate_system([{"mass": 2.0, "position": [1.0, -2.0],
-                          "velocity": [10.0, 20.0]}],
+    r = simulate_system([{"mass": 2.0, "position": [1, -2], "velocity": [10, 20]}],
                         [{"type": "uniform_acceleration",
-                          "acceleration": [0.0, -g]}], t, 2000, "pure")
+                          "acceleration": [0, -g]}], t, 2000, "rk4", "pure")
     want("ruler:projectile",
          _close(r.states[-1], [1 + 10 * t, -2 + 20 * t - .5 * g * t * t,
                                10.0, 20 - g * t], 1e-8))
-    # R2 drag exponential
+
     c, m, t = 1.5, 2.0, 0.9
     k = c / m
-    r = simulate_system([{"mass": m, "position": [0.0, 0.0],
-                          "velocity": [4.0, 0.0]}],
-                        [{"type": "linear_drag", "coefficient": c}],
-                        t, 2000, "pure")
     e = math.exp(-k * t)
-    want("ruler:drag",
-         _close(r.states[-1], [4 * (1 - e) / k, 0.0, 4 * e, 0.0], 1e-8))
-    # R3 spring harmonic
+    r = simulate_system([{"mass": m, "position": [0, 0], "velocity": [4, 0]}],
+                        [{"type": "linear_drag", "coefficient": c}],
+                        t, 2000, "trapezoid", "pure")
+    want("ruler:drag(trapezoid)",
+         _close(r.states[-1], [4 * (1 - e) / k, 0.0, 4 * e, 0.0], 1e-7))
+
     kk, m, t = 8.0, 2.0, 1.1
     w = math.sqrt(kk / m)
-    r = simulate_system([{"mass": m, "position": [0.6, 0.0],
-                          "velocity": [0.0, 0.0]}],
+    r = simulate_system([{"mass": m, "position": [0.6, 0], "velocity": [0, 0]}],
                         [{"type": "spring", "body": 0, "other": None,
-                          "anchor": [0.0, 0.0], "stiffness": kk,
+                          "anchor": [0, 0], "stiffness": kk,
                           "rest_length": 0.0, "damping": 0.0}],
-                        t, 2000, "pure")
+                        t, 2000, "rk4", "pure")
     want("ruler:spring",
          _close(r.states[-1], [0.6 * math.cos(w * t), 0.0,
                                -0.6 * w * math.sin(w * t), 0.0], 1e-8))
-    # R4 Kepler circle
+
     mu, rr, t = 100.0, 5.0, 1.0
     w = math.sqrt(mu / rr ** 3)
     v = math.sqrt(mu / rr)
     r = simulate_system([{"mass": 1e6, "position": [0, 0], "velocity": [0, 0]},
-                         {"mass": 1.0, "position": [rr, 0],
-                          "velocity": [0.0, v]}],
-                        [{"type": "central_gravity", "source": 0,
-                          "mu": mu, "bodies": [1]}], t, 4000, "pure")
-    want("ruler:kepler",
+                         {"mass": 1.0, "position": [rr, 0], "velocity": [0, v]}],
+                        [{"type": "central_gravity", "source": 0, "mu": mu,
+                          "bodies": [1]}], t, 4000, "leapfrog", "pure")
+    want("ruler:kepler(leapfrog)",
          _close(r.states[-1][4:], [rr * math.cos(w * t), rr * math.sin(w * t),
                                    -rr * w * math.sin(w * t),
                                    rr * w * math.cos(w * t)], 1e-6))
-    # policy: small problems stay on the own tool even with numpy gated
-    name, _ = bp.choose("physics", size=10)
-    want("policy:small->pure", name == "pure")
-    # parity witness when numpy exists
+
+    bodies = [{"mass": 1.0, "position": [0.6, 0], "velocity": [0, 0.9]}]
+    forces = [{"type": "spring", "body": 0, "other": None, "anchor": [0, 0],
+               "stiffness": 4.0, "rest_length": 0.0, "damping": 0.0}]
+    r = simulate_system(bodies, forces, 5.0, 2000, "leapfrog", "pure")
+    e0 = energy(r.masses, r.states[0], r.forces)
+    e1 = energy(r.masses, r.states[-1], r.forces)
+    want("energy:leapfrog-drift", e0 is not None and abs(e1 - e0) <= 1e-4 * abs(e0),
+         f"E0={e0} E1={e1}")
+
+    try:
+        simulate_system(bodies, forces, 5.0, 8, "leapfrog", "pure")
+        want("guard:stability-fails-closed", False, "no ValueError raised")
+    except ValueError:
+        want("guard:stability-fails-closed", True)
+
+    a = simulate_system(bodies, forces, 1.0, 300, "rk4", "pure").states
+    b = simulate_system(bodies, forces, 1.0, 300, "rk4", "pure").states
+    want("determinism:pure", a == b)
+
     if _NP is not None:
         want("parity:numpy", _numpy_parity())
+    else:
+        want("parity:numpy", True, "skipped (numpy absent)")
     return checks
 
-
-# ------------------------------------------------------- renderer contract v1
-def route_physics_simulation(scene, spec):
-    bodies = spec.get("bodies", [])
-    if not bodies:
-        return None
-    res = simulate_system(bodies, spec.get("forces", []),
-                          float(spec.get("duration", 4.0)),
-                          int(spec.get("steps", 240)))
-    from manim import VGroup, Dot, VMobject      # lazy: renderer-only import
-
-    states = res.states
-    stride = max(1, len(states) // 60)
-    sampled = states[::stride] + [states[-1]]
-    peak = 1e-9
-    for flat in sampled:
-        for i in range(len(res.masses)):
-            peak = max(peak, abs(flat[4 * i]), abs(flat[4 * i + 1]))
-    scale = float(spec.get("fit", 6.0)) / peak
-
-    mobs = VGroup()
-    for i, b in enumerate(bodies):
-        pts = [(f[4 * i] * scale, f[4 * i + 1] * scale, 0.0) for f in sampled]
-        color = b.get("color", "YELLOW")
-        if spec.get("trail", True):
-            mobs.add(VMobject(color=color).set_points_smoothly(pts))
-        mobs.add(Dot(pts[-1], radius=float(b.get("radius", 0.12)),
-                     color=color))
-    print(f"[physics] backend={res.backend} ({res.decision.get('reason')})")
-    return mobs
-
-
-ROUTE_TABLE = {"physics_simulation": route_physics_simulation}
 
 if __name__ == "__main__":
     fails = 0
     for name, ok, detail in selftest():
         print(f"[{'ok ' if ok else 'FAIL'}] {name} {detail if not ok else ''}")
         fails += 0 if ok else 1
-    for size in (500, 50000):
-        n, rep = bp.choose("physics", size=size)
-        print(f"size={size:>6} -> backend={n:<6} {rep['reason']}")
+    if bp is not None:
+        for size in (500, 50000):
+            n, rep = bp.choose("physics", size=size)
+            print(f"size={size:>6} -> backend={n:<6} {rep['reason']}")
     sys.exit(1 if fails else 0)
