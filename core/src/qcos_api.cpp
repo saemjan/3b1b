@@ -1,4 +1,6 @@
 // core/src/qcos_api.cpp
+#include <algorithm>
+#include <stdexcept>
 #include "api.hpp"
 #include <cmath>
 #include <cstdint>
@@ -34,6 +36,31 @@ double stream_u(uint32_t seed, uint32_t i) {
   uint32_t x = seed ? seed : 0x5AEEu;
   for (uint32_t t = 0; t <= i; ++t) { x ^= x << 13; x ^= x >> 17; x ^= x << 5; }
   return double(x) / 4294967296.0;
+}
+// Cursor-machine step on a raw amplitude vector laid out v[site*M + reg],
+// M = 1<<n (same layout program.halt sums over).  sin(theta)=1 is a full
+// hop, matching the qcos.hpp schedule comment "sin(theta), gate; 1 = full
+// hop".  The gate rides on the moving branch; the staying branch is
+// multiplied by cos(theta).  STATELESS: everything travels in the JSON.
+void prog_move(std::vector<Cx>& v, size_t n, size_t i, const Gate& g,
+               double sin_theta) {
+  const size_t M = size_t(1) << n;
+  if (M == 0 || v.size() % M != 0)
+    throw std::runtime_error("program.step: amp size not a multiple of 2^n");
+  const size_t sites = v.size() / M;
+  if (i + 1 >= sites)
+    throw std::runtime_error("program.step: cursor already at last site");
+  const double cos_theta =
+      std::sqrt(std::max(0.0, 1.0 - sin_theta * sin_theta));
+
+  std::vector<Cx> moved(v.begin() + static_cast<long>(i * M),
+                        v.begin() + static_cast<long>((i + 1) * M));
+  apply_amp(moved.data(), n, g);
+
+  for (size_t r = 0; r < M; ++r) {
+    v[i * M + r] = v[i * M + r] * Cx(cos_theta, 0);
+    v[(i + 1) * M + r] = v[(i + 1) * M + r] + moved[r] * Cx(sin_theta, 0);
+  }
 }
 
 // Fixed: Added `[](const Json& a)` signatures
