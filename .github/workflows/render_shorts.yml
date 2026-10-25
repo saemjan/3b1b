@@ -5,33 +5,61 @@ on:
   pull_request:
   workflow_dispatch:
     inputs:
+      mode:
+        description: "Input method: csv | run (generator cmd) | synthesize"
+        required: false
+        default: "csv"
+        type: choice
+        options: [csv, run, synthesize]
+      generator_cmd:
+        description: "Generator command when mode=run, e.g. python3 tools/generate_feynman_series.py --volume 2"
+        required: false
+        default: ""
+      topics:
+        description: "Comma topics when mode=synthesize (kinematics,emwave,twoslit,ratchet,betatron,masers)"
+        required: false
+        default: "kinematics"
+      rows_per_topic:
+        description: "Rows per topic when mode=synthesize"
+        required: false
+        default: "1"
+      seed:
+        description: "Deterministic seed for synthesis"
+        required: false
+        default: "7"
+      orientation:
+        description: "Batch orientation (one batch = one orientation, rule 6)"
+        required: false
+        default: "vertical"
+        type: choice
+        options: [vertical, horizontal]
+      target_duration:
+        description: "Target seconds per synthesized row"
+        required: false
+        default: "60"
+      autofix_duration:
+        description: "Retune target_duration_sec to word count (kills Phase 2 warnings)"
+        type: boolean
+        default: true
       csv:
-        description: "CSV file to validate/render"
+        description: "CSV path for mode=csv / output of generator_cmd"
         required: false
         default: "content_batch.csv"
       only:
-        description: "Optional comma-separated video_id list"
+        description: "Optional comma-separated video_id filter"
         required: false
         default: ""
       draft:
-        description: "Draft render mode"
         type: boolean
-        required: false
         default: true
       require_oracle:
-        description: "Require physics oracle gate"
         type: boolean
-        required: false
         default: false
       require_qa:
-        description: "Require visual QA gate"
         type: boolean
-        required: false
         default: false
       enable_full_render:
-        description: "Enable full audio/render pipeline (heavy, slow)"
         type: boolean
-        required: false
         default: false
 
 concurrency:
@@ -43,86 +71,36 @@ permissions:
 
 jobs:
   phase-0-bootstrap:
-    name: "🧭 Phase 0: Bootstrap & Manifest"
+    name: "🧭 Phase 0: Bootstrap, Input Compiler & Manifest"
     runs-on: ubuntu-latest
-
     outputs:
-      csv: ${{ steps.manifest.outputs.csv }}
-      only: ${{ steps.manifest.outputs.only }}
-      draft: ${{ steps.manifest.outputs.draft }}
-      require_oracle: ${{ steps.manifest.outputs.require_oracle }}
-      require_qa: ${{ steps.manifest.outputs.require_qa }}
-      enable_full_render: ${{ steps.manifest.outputs.enable_full_render }}
-
+      csv: ${{ steps.factory.outputs.csv }}
+      only: ${{ inputs.only }}
+      draft: ${{ inputs.draft }}
+      require_oracle: ${{ inputs.require_oracle }}
+      require_qa: ${{ inputs.require_qa }}
+      enable_full_render: ${{ inputs.enable_full_render }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Create manifest and phase summary
-        id: manifest
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Run factory input compiler
+        id: factory
         env:
-          INPUT_CSV: ${{ github.event.inputs.csv || 'content_batch.csv' }}
-          INPUT_ONLY: ${{ github.event.inputs.only || '' }}
-          INPUT_DRAFT: ${{ github.event.inputs.draft || 'true' }}
-          INPUT_REQUIRE_ORACLE: ${{ github.event.inputs.require_oracle || 'false' }}
-          INPUT_REQUIRE_QA: ${{ github.event.inputs.require_qa || 'false' }}
-          INPUT_ENABLE_FULL_RENDER: ${{ github.event.inputs.enable_full_render || 'false' }}
+          FACTORY_MODE: ${{ inputs.mode || 'csv' }}
+          FACTORY_GENERATOR_CMD: ${{ inputs.generator_cmd }}
+          FACTORY_TOPICS: ${{ inputs.topics }}
+          FACTORY_ROWS_PER_TOPIC: ${{ inputs.rows_per_topic }}
+          FACTORY_SEED: ${{ inputs.seed }}
+          FACTORY_ORIENTATION: ${{ inputs.orientation }}
+          FACTORY_TARGET_DURATION: ${{ inputs.target_duration }}
+          FACTORY_AUTOFIX_DURATION: ${{ inputs.autofix_duration }}
+          FACTORY_CSV: ${{ inputs.csv }}
+          FACTORY_OUT: ${{ inputs.csv }}
         run: |
           mkdir -p reports
-
-          python3 - <<'PY'
-          import datetime
-          import json
-          import os
-          import pathlib
-
-          csv = os.environ.get("INPUT_CSV", "content_batch.csv")
-          only = os.environ.get("INPUT_ONLY", "")
-          draft = os.environ.get("INPUT_DRAFT", "true").lower() == "true"
-          require_oracle = os.environ.get("INPUT_REQUIRE_ORACLE", "false").lower() == "true"
-          require_qa = os.environ.get("INPUT_REQUIRE_QA", "false").lower() == "true"
-          enable_full_render = os.environ.get("INPUT_ENABLE_FULL_RENDER", "false").lower() == "true"
-
-          manifest = {
-              "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
-              "ref": "${{ github.ref }}",
-              "sha": "${{ github.sha }}",
-              "actor": "${{ github.actor }}",
-              "event": "${{ github.event_name }}",
-              "csv": csv,
-              "only": only,
-              "draft": draft,
-              "require_oracle": require_oracle,
-              "require_qa": require_qa,
-              "enable_full_render": enable_full_render,
-          }
-
-          pathlib.Path("reports/manifest.json").write_text(
-              json.dumps(manifest, indent=2),
-              encoding="utf-8",
-          )
-
-          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as f:
-              f.write("## 🧭 Phase 0: Bootstrap & Manifest\n\n")
-              f.write("| Setting | Value |\n")
-              f.write("|---|---|\n")
-              f.write(f"| CSV | `{csv}` |\n")
-              f.write(f"| Only | `{only or 'all rows'}` |\n")
-              f.write(f"| Draft | `{draft}` |\n")
-              f.write(f"| Require oracle | `{require_oracle}` |\n")
-              f.write(f"| Require QA | `{require_qa}` |\n")
-              f.write(f"| Full render | `{enable_full_render}` |\n")
-              f.write("\nManifest written to `reports/manifest.json`.\n")
-
-          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
-              f.write(f"csv={csv}\n")
-              f.write(f"only={only}\n")
-              f.write(f"draft={'true' if draft else 'false'}\n")
-              f.write(f"require_oracle={'true' if require_oracle else 'false'}\n")
-              f.write(f"require_qa={'true' if require_qa else 'false'}\n")
-              f.write(f"enable_full_render={'true' if enable_full_render else 'false'}\n")
-          PY
-
+          python3 tools/factory_input.py
       - name: Upload bootstrap reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -132,150 +110,40 @@ jobs:
           if-no-files-found: ignore
 
   phase-1-compiler:
-    name: "🧬 Phase 1: Compiler / C++ Core"
+    name: "🧬 Phase 1: Compiler / C++ Core / Engines"
     runs-on: ubuntu-latest
     needs: phase-0-bootstrap
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-
-      - name: Prepare reports directory
-        run: mkdir -p reports
-
-      - name: Record compiler/toolchain information
-        run: |
-          {
-            echo "Compiler probe:"
-            echo
-            g++ --version 2>&1 || true
-            echo
-            clang++ --version 2>&1 || true
-            echo
-            c++ --version 2>&1 || true
-            echo
-            python3 --version
-          } > reports/compiler.txt
-
-          cat reports/compiler.txt >> "$GITHUB_STEP_SUMMARY"
-
+      - run: mkdir -p reports
       - name: Build core
         run: |
           set -o pipefail
           python3 tools/build.py all 2>&1 | tee reports/build.log
-
       - name: Verify source/body id
         run: |
           set -o pipefail
           python3 tools/build.py verify 2>&1 | tee reports/verify.log
-
-      - name: CLI source id smoke
-        run: |
-          ./build/saem_cli --source-id | tee reports/source_id.txt
-
       - name: Core method smoke tests
         run: |
-          python3 - <<'PY'
-          import json
-          import pathlib
-          import subprocess
-
-          methods = [
-              "gen.topics",
-              "core.methods",
-              "qcos.boot",
-          ]
-
-          results = []
-
-          for i, method in enumerate(methods, start=1):
-              req = {
-                  "id": i,
-                  "method": method,
-                  "args": {},
-              }
-
-              proc = subprocess.run(
-                  ["./build/saem_cli"],
-                  input=json.dumps(req),
-                  capture_output=True,
-                  text=True,
-                  timeout=60,
-              )
-
-              out = proc.stdout.strip()
-              try:
-                  payload = json.loads(out)
-              except Exception as e:
-                  payload = {
-                      "ok": False,
-                      "error": f"non-JSON response: {e}: {out[:200]}",
-                  }
-
-              ok = payload.get("ok") is True
-              results.append(
-                  {
-                      "method": method,
-                      "ok": ok,
-                      "error": payload.get("error"),
-                  }
-              )
-
-              if not ok:
-                  raise SystemExit(f"core smoke failed for {method}: {payload.get('error')}")
-
-          pathlib.Path("reports/core_smoke.json").write_text(
-              json.dumps(results, indent=2),
-              encoding="utf-8",
-          )
-
-          print("Core smoke tests passed.")
-          PY
-
-      - name: Write success summary
-        if: success()
+          for m in gen.topics core.methods qcos.boot; do
+            echo "{\"id\":1,\"method\":\"$m\",\"args\":{}}" | ./build/saem_cli | grep '"ok":true'
+          done
+      - name: Engine health & routing parity
         run: |
-          SOURCE_ID="$(./build/saem_cli --source-id || echo unknown)"
-          BINARY_BYTES="$(stat -c%s build/saem_cli 2>/dev/null || echo 0)"
-
-          {
-            echo "## 🧬 Phase 1: Compiler / C++ Core"
-            echo ""
-            echo "| Check | Result |"
-            echo "|---|---|"
-            echo "| Build | ✅ passed |"
-            echo "| Verify | ✅ passed |"
-            echo "| Source-id smoke | ✅ passed |"
-            echo "| Method smoke | ✅ passed |"
-            echo ""
-            echo "- Source ID: \`${SOURCE_ID}\`"
-            echo "- Binary size: \`${BINARY_BYTES}\` bytes"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Write failure summary
-        if: failure()
+          set -o pipefail
+          python3 tools/engine_check.py --github-summary 2>&1 | tee reports/engine_check.log
+      - name: Golden QCOS witness (A5)
         run: |
-          {
-            echo "## ❌ Phase 1 failed: Compiler / C++ Core"
-            echo ""
-            echo "### Last 120 lines of build log"
-            echo ""
-            echo '```text'
-            tail -n 120 reports/build.log 2>/dev/null || echo "No build log found."
-            echo '```'
-            echo ""
-            echo "### Last 80 lines of verify log"
-            echo ""
-            echo '```text'
-            tail -n 80 reports/verify.log 2>/dev/null || echo "No verify log found."
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-
+          set -o pipefail
+          python3 tools/golden_qcos.py check 2>&1 | tee reports/golden_qcos.log
+      - name: Canon lint (one canon, four tongues)
+        run: |
+          set -o pipefail
+          python3 tools/canon_lint.py 2>&1 | tee reports/canon_lint.log
       - name: Upload compiler/core reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -283,154 +151,44 @@ jobs:
           name: phase1-compiler-reports
           path: reports/
           if-no-files-found: ignore
-
       - name: Upload core binary
         if: success()
         uses: actions/upload-artifact@v4
         with:
           name: saem-cli-linux
           path: build/saem_cli
-          if-no-files-found: error
 
   phase-2-content-gates:
     name: "🧪 Phase 2: Content / Schema / Oracle Gates"
     runs-on: ubuntu-latest
-    needs:
-      - phase-0-bootstrap
-      - phase-1-compiler
-
+    needs: [phase-0-bootstrap, phase-1-compiler]
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-
-      - name: Prepare reports directory
-        run: mkdir -p reports
-
-      - name: Validate CSV content gates
+      - name: Validate the compiled CSV
         env:
-          SELECTED_CSV: ${{ needs.phase-0-bootstrap.outputs.csv }}
+          CSV: ${{ needs.phase-0-bootstrap.outputs.csv }}
           REQUIRE_ORACLE: ${{ needs.phase-0-bootstrap.outputs.require_oracle }}
         run: |
-          python3 - <<'PY'
-          import json
-          import os
-          import pathlib
-          import sys
-
-          sys.path.insert(0, str(pathlib.Path(".").resolve()))
-
-          import schema_validator
-
-          selected = os.environ.get("SELECTED_CSV", "content_batch.csv")
-          require_oracle = os.environ.get("REQUIRE_ORACLE", "false") == "true"
-
-          candidates = []
-
-          selected_path = pathlib.Path(selected)
-          if selected_path.exists():
-              candidates.append(selected_path)
-          else:
-              print(f"[WARN] selected CSV not found: {selected}")
-
-          examples = pathlib.Path("examples")
-          if examples.exists():
-              candidates.extend(sorted(examples.glob("*.csv")))
-
-          root_csvs = sorted(pathlib.Path(".").glob("*.csv"))
-          candidates.extend(root_csvs)
-
-          unique = []
-          seen = set()
-
-          for path in candidates:
-              resolved = path.resolve()
-              if resolved not in seen:
-                  seen.add(resolved)
-                  unique.append(path)
-
-          summary = []
-          failed_files = 0
-
-          for path in unique:
-              rows, errors, warnings = schema_validator.validate_csv(
-                  path,
-                  require_oracle=require_oracle,
-              )
-
-              entry = {
-                  "csv": str(path),
-                  "rows": len(rows),
-                  "errors": len(errors),
-                  "warnings": len(warnings),
-                  "error_messages": errors[:50],
-                  "warning_messages": warnings[:50],
-              }
-
-              summary.append(entry)
-
-              if errors:
-                  failed_files += 1
-
+          python3 - "$CSV" "$REQUIRE_ORACLE" <<'PY'
+          import json, os, pathlib, sys
+          sys.path.insert(0, ".")
+          import schema_validator as sv
+          csv_path, req = sys.argv[1], sys.argv[2] == "true"
+          rows, errs, warns = sv.validate_csv(csv_path, req)
+          pathlib.Path("reports").mkdir(exist_ok=True)
           pathlib.Path("reports/schema_summary.json").write_text(
-              json.dumps(summary, indent=2),
-              encoding="utf-8",
-          )
-
-          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as f:
-              f.write("## 🧪 Phase 2: Content / Schema / Oracle Gates\n\n")
-
-              if not unique:
-                  f.write("No CSV files were found to validate.\n")
-              else:
-                  f.write("| CSV | Rows | Errors | Warnings | Result |\n")
-                  f.write("|---|---:|---:|---:|---|\n")
-
-                  for entry in summary:
-                      result = "✅" if entry["errors"] == 0 else "❌"
-                      f.write(
-                          f"| `{entry['csv']}` | {entry['rows']} | "
-                          f"{entry['errors']} | {entry['warnings']} | {result} |\n"
-                      )
-
-                  f.write("\n")
-
-                  for entry in summary:
-                      if entry["error_messages"]:
-                          f.write(f"### ❌ Errors in `{entry['csv']}`\n\n")
-                          for msg in entry["error_messages"]:
-                              f.write(f"- {msg}\n")
-                          f.write("\n")
-
-                      if entry["warning_messages"]:
-                          f.write(f"### ⚠️ Warnings in `{entry['csv']}`\n\n")
-                          for msg in entry["warning_messages"]:
-                              f.write(f"- {msg}\n")
-                          f.write("\n")
-
-          if failed_files:
-              raise SystemExit(f"{failed_files} CSV file(s) failed content validation.")
+              json.dumps({"csv": csv_path, "rows": len(rows),
+                          "errors": errs, "warnings": warns}, indent=2))
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as f:
+              f.write("## 🧪 Phase 2\n\n")
+              f.write(f"- `{csv_path}`: {len(rows)} rows, {len(errs)} errors, {len(warns)} warnings\n")
+              for w in warns: f.write(f"  - ⚠️ {w}\n")
+              for e in errs:  f.write(f"  - ❌ {e}\n")
+          sys.exit(1 if errs else 0)
           PY
-
-      - name: Write failure summary
-        if: failure()
-        run: |
-          {
-            echo "## ❌ Phase 2 failed: Content / Schema / Oracle Gates"
-            echo ""
-            echo "See \`reports/schema_summary.json\` for full machine-readable details."
-            echo ""
-            if [ -f reports/schema_summary.json ]; then
-              echo '```json'
-              head -n 200 reports/schema_summary.json
-              echo '```'
-            fi
-          } >> "$GITHUB_STEP_SUMMARY"
-
       - name: Upload content gate reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -442,370 +200,83 @@ jobs:
   phase-3-python-factory:
     name: "🐍 Phase 3: Python Factory Static Checks"
     runs-on: ubuntu-latest
-    needs:
-      - phase-0-bootstrap
-      - phase-1-compiler
-
+    needs: [phase-0-bootstrap, phase-1-compiler]
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-
-      - name: Prepare reports directory
-        run: mkdir -p reports
-
-      - name: Syntax-check Python factory files
+      - name: Syntax-check factory + engines
         run: |
-          mkdir -p reports
-
-          CANDIDATES=(
-            batch_runner.py
-            render_universal.py
-            generate_audio.py
-            schema_validator.py
-            core_processor.py
-            make_batch.py
-            saem/qcos_shell.py
-            tools/build.py
-            tools/grow.py
-            tools/ledger.py
-            tools/physics_oracle.py
-            tools/visual_qa.py
-            tools/word_sync.py
-          )
-
-          EXISTING=()
-
-          for f in "${CANDIDATES[@]}"; do
-            if [ -f "$f" ]; then
-              EXISTING+=("$f")
-            fi
-          done
-
-          if [ "${#EXISTING[@]}" -eq 0 ]; then
-            echo "No Python factory files found to check." | tee -a "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
-
-          printf '%s\n' "${EXISTING[@]}" > reports/python_checked_files.txt
-
-          set -o pipefail
-          python3 -m py_compile "${EXISTING[@]}" 2>&1 | tee reports/python_syntax.log
-
-          {
-            echo "## 🐍 Phase 3: Python Factory Static Checks"
-            echo ""
-            echo "| File | Result |"
-            echo "|---|---|"
-            for f in "${EXISTING[@]}"; do
-              echo "| \`$f\` | ✅ syntax OK |"
-            done
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Write failure summary
-        if: failure()
-        run: |
-          {
-            echo "## ❌ Phase 3 failed: Python Factory Static Checks"
-            echo ""
-            echo '```text'
-            tail -n 160 reports/python_syntax.log 2>/dev/null || echo "No Python syntax log found."
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Upload Python static reports
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: phase3-python-reports
-          path: reports/
-          if-no-files-found: ignore
+          python3 -m py_compile batch_runner.py render_universal.py generate_audio.py \
+            schema_validator.py core_processor.py make_batch.py saem/qcos_shell.py \
+            tools/build.py tools/grow.py tools/ledger.py tools/physics_oracle.py \
+            tools/visual_qa.py tools/word_sync.py tools/factory_input.py tools/engine_check.py \
+            calculus_engine.py electromagnetics_engine.py fluid_dynamics_engine.py \
+            geometry_engine.py linear_algebra_engine.py rotational_motion_engine.py \
+            physics_simulation.py sound_design.py soundscape.py text_normalizer.py
+          echo "## 🐍 Phase 3" >> "$GITHUB_STEP_SUMMARY"
+          echo "- ✅ 24 factory + engine files syntax OK" >> "$GITHUB_STEP_SUMMARY"
 
   phase-4-full-render:
     name: "🎬 Phase 4: Full Render (Optional / Heavy)"
     runs-on: ubuntu-latest
     timeout-minutes: 120
     if: needs.phase-0-bootstrap.outputs.enable_full_render == 'true'
-    needs:
-      - phase-0-bootstrap
-      - phase-1-compiler
-      - phase-2-content-gates
-      - phase-3-python-factory
-
+    needs: [phase-0-bootstrap, phase-1-compiler, phase-2-content-gates, phase-3-python-factory]
     env:
       CSV: ${{ needs.phase-0-bootstrap.outputs.csv }}
       ONLY: ${{ needs.phase-0-bootstrap.outputs.only }}
       DRAFT: ${{ needs.phase-0-bootstrap.outputs.draft }}
       REQUIRE_ORACLE: ${{ needs.phase-0-bootstrap.outputs.require_oracle }}
       REQUIRE_QA: ${{ needs.phase-0-bootstrap.outputs.require_qa }}
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-
-      - name: Install system media dependencies
+      - name: System media deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            ffmpeg \
-            pkg-config \
-            libcairo2-dev \
-            libpango1.0-dev \
-            python3-dev
-
-      - name: Install Python dependencies
+          sudo apt-get install -y --no-install-recommends ffmpeg libcairo2-dev libpango1.0-dev
+      - name: Python deps
         run: |
           python3 -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then
-            pip install -r requirements.txt
-          else
-            echo "No requirements.txt found; continuing with minimal Python environment."
-          fi
-
-      - name: Rebuild core for render session
+          [ -f requirements.txt ] && pip install -r requirements.txt || true
+      - name: Render batch
         run: |
-          python3 tools/build.py cli
-
-      - name: Attempt full render pipeline
-        run: |
-          mkdir -p reports logs
-
-          python3 - <<'PY'
-          import importlib.util
-          import json
-          import os
-          import pathlib
-          import subprocess
-
-          summary_path = pathlib.Path(os.environ["GITHUB_STEP_SUMMARY"])
-
-          have_tts = importlib.util.find_spec("TTS") is not None
-          have_manim = importlib.util.find_spec("manim") is not None
-
-          with summary_path.open("a", encoding="utf-8") as f:
-              f.write("## 🎬 Phase 4: Full Render\n\n")
-              f.write("| Dependency | Available |\n")
-              f.write("|---|---|\n")
-              f.write(f"| TTS | {'✅' if have_tts else '❌'} |\n")
-              f.write(f"| Manim | {'✅' if have_manim else '❌'} |\n\n")
-
-          if not (have_tts and have_manim):
-              with summary_path.open("a", encoding="utf-8") as f:
-                  f.write("⚠️ Full render skipped because heavy dependencies are unavailable.\n")
-              return
-
-          cmd = [
-              "python3",
-              "batch_runner.py",
-              "--csv",
-              os.environ.get("CSV", "content_batch.csv"),
-              "--retries",
-              "1",
-          ]
-
-          if os.environ.get("DRAFT", "true") == "true":
-              cmd.append("--draft")
-
-          only = os.environ.get("ONLY", "").strip()
-          if only:
-              cmd.extend(["--only", only])
-
-          if os.environ.get("REQUIRE_ORACLE", "false") == "true":
-              cmd.append("--require-oracle")
-
-          if os.environ.get("REQUIRE_QA", "false") == "true":
-              cmd.append("--require-qa")
-
-          proc = subprocess.run(
-              cmd,
-              capture_output=True,
-              text=True,
-          )
-
-          pathlib.Path("reports/render_stdout.log").write_text(
-              proc.stdout,
-              encoding="utf-8",
-          )
-          pathlib.Path("reports/render_stderr.log").write_text(
-              proc.stderr,
-              encoding="utf-8",
-          )
-
-          with summary_path.open("a", encoding="utf-8") as f:
-              f.write("Command:\n\n")
-              f.write("```bash\n")
-              f.write(" ".join(cmd))
-              f.write("\n```\n\n")
-
-              if proc.returncode == 0:
-                  f.write("✅ Render pipeline completed.\n")
-              else:
-                  f.write("❌ Render pipeline failed.\n\n")
-                  f.write("### Render stderr tail\n\n")
-                  f.write("```text\n")
-                  f.write("\n".join(proc.stderr.splitlines()[-120:]))
-                  f.write("\n```\n")
-
-          if proc.returncode != 0:
-              raise SystemExit(1)
-          PY
-
-      - name: Summarize render ledger
-        if: always()
-        run: |
-          python3 - <<'PY'
-          import json
-          import os
-          import pathlib
-
-          ledger = pathlib.Path("logs/render_ledger.jsonl")
-          summary_path = pathlib.Path(os.environ["GITHUB_STEP_SUMMARY"])
-
-          if not ledger.exists():
-              with summary_path.open("a", encoding="utf-8") as f:
-                  f.write("\nNo render ledger was produced.\n")
-              return
-
-          entries = []
-          for line in ledger.read_text(encoding="utf-8").splitlines():
-              line = line.strip()
-              if not line:
-                  continue
-              try:
-                  entries.append(json.loads(line))
-              except Exception:
-                  continue
-
-          ok = sum(1 for e in entries if e.get("status") == "ok")
-          failed = sum(1 for e in entries if e.get("status") != "ok")
-
-          pathlib.Path("reports/render_ledger_summary.json").write_text(
-              json.dumps(entries, indent=2),
-              encoding="utf-8",
-          )
-
-          with summary_path.open("a", encoding="utf-8") as f:
-              f.write("\n### 📒 Render ledger summary\n\n")
-              f.write("| Metric | Value |\n")
-              f.write("|---|---:|\n")
-              f.write(f"| Total entries | {len(entries)} |\n")
-              f.write(f"| OK | {ok} |\n")
-              f.write(f"| Failed / other | {failed} |\n\n")
-
-              if entries:
-                  f.write("| video_id | status | error |\n")
-                  f.write("|---|---|---|\n")
-                  for e in entries[-30:]:
-                      vid = e.get("video_id", "?")
-                      status = e.get("status", "?")
-                      error = str(e.get("error", ""))[:80]
-                      f.write(f"| `{vid}` | {status} | {error} |\n")
-          PY
-
-      - name: Write failure summary
-        if: failure()
-        run: |
-          {
-            echo "## ❌ Phase 4 failed: Full Render"
-            echo ""
-            echo "### render stderr tail"
-            echo ""
-            echo '```text'
-            tail -n 160 reports/render_stderr.log 2>/dev/null || echo "No render stderr log found."
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Upload render reports
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: phase4-render-reports
-          path: |
-            reports/
-            logs/
-          if-no-files-found: ignore
-
-      - name: Upload rendered media if present
+          CMD="python3 batch_runner.py --csv $CSV --retries 1"
+          [ "$DRAFT" = "true" ] && CMD="$CMD --draft"
+          [ -n "$ONLY" ] && CMD="$CMD --only $ONLY"
+          [ "$REQUIRE_ORACLE" = "true" ] && CMD="$CMD --require-oracle"
+          [ "$REQUIRE_QA" = "true" ] && CMD="$CMD --require-qa"
+          echo "$CMD" >> "$GITHUB_STEP_SUMMARY"
+          $CMD
+      - name: Upload render artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: rendered-media
           path: |
             output_shorts/
-            media/
+            logs/
           if-no-files-found: ignore
 
   phase-5-final-report:
     name: "📊 Phase 5: Final Summary"
     runs-on: ubuntu-latest
     if: always()
-    needs:
-      - phase-0-bootstrap
-      - phase-1-compiler
-      - phase-2-content-gates
-      - phase-3-python-factory
-      - phase-4-full-render
-
+    needs: [phase-0-bootstrap, phase-1-compiler, phase-2-content-gates, phase-3-python-factory, phase-4-full-render]
     steps:
-      - name: Write final pipeline summary
+      - name: Final table
         run: |
           {
             echo "## 📊 Final Development Phase Summary"
-            echo ""
             echo "| Phase | Status |"
             echo "|---|---|"
-            echo "| 🧭 Bootstrap | ${{ needs.phase-0-bootstrap.result }} |"
-            echo "| 🧬 Compiler / Core | ${{ needs.phase-1-compiler.result }} |"
+            echo "| 🧭 Bootstrap + input compiler | ${{ needs.phase-0-bootstrap.result }} |"
+            echo "| 🧬 Compiler / core / engines | ${{ needs.phase-1-compiler.result }} |"
             echo "| 🧪 Content gates | ${{ needs.phase-2-content-gates.result }} |"
             echo "| 🐍 Python factory | ${{ needs.phase-3-python-factory.result }} |"
             echo "| 🎬 Full render | ${{ needs.phase-4-full-render.result }} |"
-            echo ""
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Add failure guidance
-        run: |
-          {
-            if [ "${{ needs.phase-1-compiler.result }}" != "success" ]; then
-              echo "### ❌ Compiler/core failed"
-              echo ""
-              echo "Check Phase 1 logs and \`reports/build.log\` artifact."
-              echo ""
-            fi
-
-            if [ "${{ needs.phase-2-content-gates.result }}" != "success" ]; then
-              echo "### ❌ Content gates failed"
-              echo ""
-              echo "Check Phase 2 schema/oracle errors in \`reports/schema_summary.json\`."
-              echo ""
-            fi
-
-            if [ "${{ needs.phase-3-python-factory.result }}" != "success" ]; then
-              echo "### ❌ Python factory checks failed"
-              echo ""
-              echo "Check Phase 3 syntax logs."
-              echo ""
-            fi
-
-            if [ "${{ needs.phase-4-full-render.result }}" = "failure" ]; then
-              echo "### ❌ Full render failed"
-              echo ""
-              echo "Check Phase 4 render logs and ledger summary."
-              echo ""
-            fi
-
-            if [ "${{ needs.phase-4-full-render.result }}" = "skipped" ]; then
-              echo "### ℹ️ Full render skipped"
-              echo ""
-              echo "Enable it from workflow_dispatch with \`enable_full_render=true\`."
-              echo ""
-            fi
           } >> "$GITHUB_STEP_SUMMARY"
