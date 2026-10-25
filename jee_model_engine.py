@@ -1232,6 +1232,15 @@ def selftest():
         want("guard:bad-edge", False)
     except ValueError:
         want("guard:bad-edge", True)
+    import random as _rnd
+    for cid, c in REGISTRY.items():
+        p = {n: d for n, (_l, _h, d) in c.params.items()}
+        story = c.recipe(c.model(p), p, _rnd.Random(0))
+        extra = {v["type"] for v in story["visuals"]} - ROUTED_MANIFEST
+        want(f"parity:{cid}", not extra, str(extra))
+    lp = live_parity()
+    want("parity:manifest-live", not lp.get("unrouted_manifest"),
+         str(lp.get("unrouted_manifest", "")))
     return checks
 
 
