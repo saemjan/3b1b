@@ -1,6 +1,22 @@
 #!/usr/bin/env python3
-"""Manim engine with gates: reads one job JSON (env SAEM_JOB)..."""
+"""render_universal.py — gen-2 manim renderer (QCOS factory layer).
+
+Reads one job JSON (env SAEM_JOB), builds the scene from
+visual_data_json + equations_json + beats_json, routes primitives to
+inline builders OR gen-2 engines (contract v1 below), tracks every
+failure, and writes a provenance-bearing render report.
+
+Constitution notes:
+  A0  numbers arrive pre-computed in spec (core is the only calculator)
+  A5  report receipts core_source_id + narration hash for the ledger
+  degradation, not deception: unknown/failing primitives are skipped
+  with [WARN] and recorded, never crash the render.
+"""
+from __future__ import annotations
+
 import ast
+import hashlib
+import importlib
 import json
 import math
 import os
@@ -9,16 +25,57 @@ import sys
 from pathlib import Path
 
 from manim import (
-    Scene, ThreeDScene, config, VGroup, Group, MathTex, Text, Arrow, Line,
+    Scene, ThreeDScene, config, VGroup, MathTex, Text, Arrow, Line,
     Dot, Circle, Ellipse, Rectangle, Polygon, Brace, Axes, NumberLine,
-    ValueTracker, always_redraw, Create, Write, FadeIn, FadeOut, GrowArrow,
-    MoveAlongPath, Succession, Wait, UP, DOWN, LEFT, RIGHT, ORIGIN, PI,
-    VMobject, ThreeDAxes, Sphere, Cube, Cylinder, Cone, UR
+    ValueTracker, always_redraw, Create, Write, FadeIn, FadeOut,
+    UP, DOWN, LEFT, RIGHT, ORIGIN, PI, VMobject,
+    Sphere, Cube, Cylinder, Cone, UR, RED, linear,
 )
 
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 
+# ---- engine contract v1 (canon-aligned) -------------------------------
+# Every gen-2 engine module exposes:
+#     ROUTE_TABLE: dict[str, callable(scene, spec) -> Mobject | None]
+# Legacy engines are auto-shimmed when they expose build_<type>(scene, spec).
+# Engines never import the core; they draw numbers the core already proved.
+ENGINE_MODULES = (
+    "calculus_engine", "electromagnetics_engine", "fluid_dynamics_engine",
+    "geometry_engine", "linear_algebra_engine", "rotational_motion_engine",
+    "physics_simulation",
+)
+
+_ENGINES = None
+
+
+def _load_engines():
+    table, loaded = {}, []
+    for name in ENGINE_MODULES:
+        try:
+            mod = importlib.import_module(name)
+        except Exception as e:                      # missing engine = warn, not fail
+            print(f"[WARN] engine {name} unavailable: {e}")
+            continue
+        routes = getattr(mod, "ROUTE_TABLE", None)
+        if not isinstance(routes, dict):
+            routes = {a[len("build_"):]: getattr(mod, a)
+                      for a in dir(mod) if a.startswith("build_")}
+        if routes:
+            loaded.append(name)
+            for t, fn in routes.items():
+                table.setdefault(t, (name, fn))
+    return table, loaded
+
+
+def engine_table():
+    global _ENGINES
+    if _ENGINES is None:
+        _ENGINES = _load_engines()[0]
+    return _ENGINES
+
+
+# ---- job / frame -------------------------------------------------------
 JOB_PATH = os.environ.get("SAEM_JOB")
 JOB = json.loads(Path(JOB_PATH).read_text(encoding="utf-8")) if JOB_PATH else {
     "row": {"video_id": "demo", "concept_type": "GENERIC",
@@ -31,19 +88,43 @@ JOB = json.loads(Path(JOB_PATH).read_text(encoding="utf-8")) if JOB_PATH else {
 ROW = JOB["row"]
 ORIENT = JOB.get("orientation", ROW.get("orientation", "vertical"))
 DURATION = float(JOB.get("audio_duration", 60.0))
-FAILED = []
+CORE_ID = os.environ.get("SAEM_SOURCE_ID", "")
+
+
+def apply_frame_config(job):
+    draft = bool(job.get("draft"))
+    if ORIENT == "vertical":
+        config.pixel_width, config.pixel_height = (480, 854) if draft else (1080, 1920)
+        config.frame_width, config.frame_height = 9.0, 16.0
+    else:
+        config.pixel_width, config.pixel_height = (854, 480) if draft else (1920, 1080)
+        config.frame_width, config.frame_height = 16.0, 9.0
+    config.frame_rate = 15 if draft else 30
+
+
+apply_frame_config(JOB)
+
 
 def safe_json_loads(cell, default):
     if not cell:
         return default
     s = cell.strip()
-    # Fixed: Restored valid backslashes for JSON repair
-    for cand in (s, s.replace("\\\\", "\\"), s.replace("\\", "")):
+    for cand in (s, s.replace("\\\\", "\\"), re.sub(r"\\(?!\\)", r"\\\\", s)):
         try:
             return json.loads(cand)
         except json.JSONDecodeError:
             continue
     return default
+
+
+def narration_hash(script: str) -> str:
+    try:
+        import text_normalizer as tn
+        spoken = tn.normalize(script)
+    except Exception:
+        spoken = script
+    return hashlib.sha256(spoken.encode("utf-8")).hexdigest()[:16]
+
 
 # ---- restricted expression evaluator (arithmetic over x) --------------
 _ALLOWED_FUNCS = {"sin": math.sin, "cos": math.cos, "tan": math.tan,
@@ -51,8 +132,10 @@ _ALLOWED_FUNCS = {"sin": math.sin, "cos": math.cos, "tan": math.tan,
                   "abs": abs}
 _CONSTS = {"pi": math.pi, "e": math.e}
 
+
 def eval_expr(expr, x):
     node = ast.parse(expr.replace("^", "**"), mode="eval").body
+
     def ev(n):
         if isinstance(n, ast.Constant):
             return float(n.value)
@@ -77,15 +160,8 @@ def eval_expr(expr, x):
         raise ValueError("forbidden expression node")
     return ev(node)
 
-# ---- frame configuration ----------------------------------------------
-if ORIENT == "vertical":
-    config.pixel_width, config.pixel_height = (480, 854) if JOB.get("draft") else (1080, 1920)
-    config.frame_width, config.frame_height = 9.0, 16.0
-else:
-    config.pixel_width, config.pixel_height = (854, 480) if JOB.get("draft") else (1920, 1080)
-    config.frame_width, config.frame_height = 16.0, 9.0
-config.frame_rate = 15 if JOB.get("draft") else 30
 
+# ---- branding + reporting mix-in ---------------------------------------
 class SaemLabsBranding:
     def add_intro(self, title, tagline):
         t = Text(title, font_size=34, weight="BOLD").to_edge(UP, buff=0.4)
@@ -98,8 +174,47 @@ class SaemLabsBranding:
     def watermark(self):
         return Text("SaemLabs", font_size=16, opacity=0.4).to_corner(UR, buff=0.2)
 
-class UniversalPhysicsScene(Scene, SaemLabsBranding):
+
+class ReportMixin:
+    """Deterministic clock + provenance report, shared by 2D and 3D scenes."""
+
+    def _init_report(self):
+        self.failed = []
+        self.engines_used = set()
+        self._clock = 0.0
+
+    def play(self, *animations, **kwargs):
+        rt = kwargs.get("run_time", 1.0)
+        res = super().play(*animations, **kwargs)
+        self._clock += rt
+        return res
+
+    def wait(self, duration=1.0, **kwargs):
+        res = super().wait(duration, **kwargs)
+        self._clock += duration
+        return res
+
+    def write_report(self, primitive_count):
+        report = {
+            "video_id": ROW.get("video_id"),
+            "schema_version": 2,
+            "core_source_id": CORE_ID or None,
+            "narration_hash": narration_hash(ROW.get("audio_script", "")),
+            "primitive_count": primitive_count,
+            "failed_primitives": self.failed,
+            "engines_used": sorted(self.engines_used),
+            "routing_parity": parity_report(),
+            "duration_sec": DURATION,
+            "orientation": ORIENT,
+        }
+        Path(JOB.get("report_path", "report.json")).write_text(
+            json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+# ---- 2D scene -----------------------------------------------------------
+class UniversalPhysicsScene(ReportMixin, Scene, SaemLabsBranding):
     def construct(self):
+        self._init_report()
         visuals = safe_json_loads(ROW.get("visual_data_json"), []) or []
         equations = safe_json_loads(ROW.get("equations_json"), []) or []
         beats = safe_json_loads(ROW.get("beats_json"), []) or []
@@ -112,14 +227,12 @@ class UniversalPhysicsScene(Scene, SaemLabsBranding):
         eq_mobs = []
         for i, eq in enumerate(equations[:4]):
             try:
-                m = MathTex(eq, font_size=30).move_to(UP * (2.5 - 0.8 * i))
-                eq_mobs.append(m)
+                eq_mobs.append(MathTex(eq, font_size=30).move_to(UP * (2.5 - 0.8 * i)))
             except Exception as e:
-                FAILED.append(f"equation:{eq[:20]}:{e}")
+                self.failed.append(f"equation:{eq[:20]}:{e}")
 
         timeline = self.align_beats(beats, objects)
-        shown = set()
-        last = 1.0
+        shown, last = set(), 1.0
         for t, focus in timeline:
             dt = max(0.2, t - last)
             self.wait(dt)
@@ -135,12 +248,13 @@ class UniversalPhysicsScene(Scene, SaemLabsBranding):
         for m in eq_mobs:
             self.play(Write(m), run_time=0.8)
 
-        remaining = max(0.5, DURATION + 4.0 - self.renderer.time)
+        remaining = max(0.5, DURATION + 4.0 - self._clock)
         self.wait(min(remaining, 4.0))
         self.play(FadeIn(self.add_outro()), run_time=1.5)
         self.wait(2.0)
         self.write_report(len(visuals) + len(equations))
 
+    # ---- beats: word-level alignment with equal-slice fallback --------
     def align_beats(self, beats, objects):
         if not beats:
             return []
@@ -154,17 +268,25 @@ class UniversalPhysicsScene(Scene, SaemLabsBranding):
             return [(DURATION * i / max(1, n), b.get("focus"))
                     for i, b in enumerate(beats)]
 
+    # ---- primitive construction: inline first, then engines -----------
     def build_primitives(self, visuals):
         objects, order = {}, []
         for i, spec in enumerate(visuals):
             if not isinstance(spec, dict):
-                FAILED.append(f"visual[{i}]:not-a-dict")
+                self.failed.append(f"visual[{i}]:not-a-dict")
                 continue
             ptype = spec.get("type", "?")
             spec.setdefault("id", f"p{i}")
+
             builder = getattr(self, f"_prim_{ptype}", None)
+            src = "inline"
             if builder is None:
-                FAILED.append(f"unknown:{ptype}")
+                hit = engine_table().get(ptype)
+                if hit is not None:
+                    src, fn = hit
+                    builder = (lambda _fn=fn: (lambda s: _fn(self, s)))()
+            if builder is None:
+                self.failed.append(f"unknown:{ptype}")
                 print(f"[WARN] unknown primitive '{ptype}' skipped")
                 continue
             try:
@@ -172,21 +294,23 @@ class UniversalPhysicsScene(Scene, SaemLabsBranding):
                 if mob is not None:
                     objects[spec["id"]] = mob
                     order.append(spec["id"])
+                    if src != "inline":
+                        self.engines_used.add(src)
             except Exception as e:
-                FAILED.append(f"{ptype}:{e}")
-                print(f"[WARN] primitive '{ptype}' failed: {e}")
+                self.failed.append(f"{ptype}:{e}")
+                print(f"[WARN] primitive '{ptype}' failed via {src}: {e}")
         return objects, order
 
     def _pos(self, spec, default=(0, 0, 0)):
         p = spec.get("pos", spec.get("center", list(default)))
         return tuple(p) + (0.0,) * (3 - len(p)) if len(p) < 3 else tuple(p)
 
+    # static -------------------------------------------------------------
     def _prim_text(self, s):
         return Text(str(s.get("text", "")), font_size=s.get("font_size", 24)).move_to(self._pos(s))
 
     def _prim_dot(self, s):
-        return Dot(self._pos(s), radius=s.get("radius", 0.08),
-                   color=s.get("color", "YELLOW"))
+        return Dot(self._pos(s), radius=s.get("radius", 0.08), color=s.get("color", "YELLOW"))
     _prim_charge = _prim_dot
     _prim_particle = _prim_dot
 
@@ -199,15 +323,13 @@ class UniversalPhysicsScene(Scene, SaemLabsBranding):
     _prim_force = _prim_vector
 
     def _prim_line(self, s):
-        a = tuple(s.get("start", [-2, 0, 0]))
-        b = tuple(s.get("end", [2, 0, 0]))
-        return Line(a, b, color=s.get("color", "WHITE"))
+        return Line(tuple(s.get("start", [-2, 0, 0])), tuple(s.get("end", [2, 0, 0])),
+                    color=s.get("color", "WHITE"))
     _prim_rod = _prim_line
     _prim_segment = _prim_line
 
     def _prim_circle(self, s):
-        return Circle(radius=s.get("radius", 1.0),
-                      color=s.get("color", "GREEN")).move_to(self._pos(s))
+        return Circle(radius=s.get("radius", 1.0), color=s.get("color", "GREEN")).move_to(self._pos(s))
     _prim_lens = _prim_circle
 
     def _prim_ellipse(self, s):
@@ -229,46 +351,52 @@ class UniversalPhysicsScene(Scene, SaemLabsBranding):
         return Brace(Line(a, b), direction=DOWN, color=s.get("color", "YELLOW"))
 
     def _prim_graph(self, s):
-        ax = Axes(x_range=s.get("x_range", [-4, 4]),
-                  y_range=s.get("y_range", [-3, 3]),
+        ax = Axes(x_range=s.get("x_range", [-4, 4]), y_range=s.get("y_range", [-3, 3]),
                   x_length=s.get("x_length", 6.0),
                   y_length=s.get("y_length", 4.0)).move_to(self._pos(s, (0, -1, 0)))
-        expr = s.get("expression", "x")
-        curve = ax.plot(lambda t: eval_expr(expr, t), color=s.get("color", "YELLOW"))
+        curve = ax.plot(lambda t: eval_expr(s.get("expression", "x"), t),
+                        color=s.get("color", "YELLOW"))
         return VGroup(ax, curve)
     _prim_function = _prim_graph
     _prim_curve = _prim_graph
     _prim_calculus_graph = _prim_graph
 
-    def _prim_derivative_tangent(self, s):
+    def _prim_derivative_tangent(self, s):   # D1 fixed: real secant, layered fallbacks
         ax = Axes(x_range=s.get("x_range", [-3, 3]), y_range=s.get("y_range", [-3, 3]),
                   x_length=6.0, y_length=4.0).move_to(self._pos(s, (0, -1, 0)))
         expr = s.get("expression", "x^2")
-        x0 = float(s.get("x0", 1.0))
-        d = float(s.get("delta", 0.5))
+        x0, d = float(s.get("x0", 1.0)), float(s.get("delta", 0.5))
         curve = ax.plot(lambda t: eval_expr(expr, t), color="YELLOW")
-        
-        # Fixed: Replaced invalid `? None` syntax with a safe try/except block
-        try:
-            if hasattr(ax, "get_secant_line_group"):
-                sec = ax.get_secant_line_group(curve, x0, x0 + d)
-                return VGroup(ax, curve, sec)
-        except Exception:
-            pass
-        return VGroup(ax, curve)
+        mobs = [ax, curve]
+        sec = None
+        for maker in (lambda: ax.get_secant_line_group(curve, x0, d),
+                      lambda: ax.get_secant_line(curve, x0, dx=d)):
+            try:
+                sec = maker()
+                break
+            except Exception:
+                sec = None
+        if sec is None:                      # hand-rolled secant: never drop the visual
+            try:
+                p1 = ax.c2p(x0, eval_expr(expr, x0))
+                p2 = ax.c2p(x0 + d, eval_expr(expr, x0 + d))
+                sec = Line(p1, p2, color=RED)
+            except Exception:
+                sec = None
+        if sec is not None:
+            mobs.append(sec)
+        return VGroup(*mobs)
 
     def _prim_number_line(self, s):
-        nl = NumberLine(x_range=s.get("x_range", [-5, 5]), length=s.get("length", 6.0)).move_to(self._pos(s))
-        marker = Dot(nl.n2p(float(s.get("value", 0))), color="RED")
-        return VGroup(nl, marker)
+        nl = NumberLine(x_range=s.get("x_range", [-5, 5]),
+                        length=s.get("length", 6.0)).move_to(self._pos(s))
+        return VGroup(nl, Dot(nl.n2p(float(s.get("value", 0))), color="RED"))
 
     def _prim_wave(self, s):
         ax = Axes(x_range=s.get("x_range", [-4, 4]), y_range=[-1.5, 1.5],
                   x_length=7.0, y_length=2.0).move_to(self._pos(s, (0, -1, 0)))
-        amp = float(s.get("amplitude", 0.6))
-        freq = float(s.get("frequency", 1.0))
-        curve = ax.plot(lambda t: amp * math.sin(2 * math.pi * freq * t / 4.0),
-                        color="BLUE")
+        amp, freq = float(s.get("amplitude", 0.6)), float(s.get("frequency", 1.0))
+        curve = ax.plot(lambda t: amp * math.sin(2 * math.pi * freq * t / 4.0), color="BLUE")
         return VGroup(ax, curve)
 
     def _prim_energy_bar(self, s):
@@ -285,7 +413,8 @@ class UniversalPhysicsScene(Scene, SaemLabsBranding):
 
     def _prim_spring(self, s):
         base = Line((-0.5, 2, 0), (0.5, 2, 0)).move_to(self._pos(s, (0, 2, 0)))
-        coil = VGroup(*[Line(((-0.3) ** k, 2 - 0.2 * k, 0), ((0.3) ** k, 2 - 0.2 * k - 0.1, 0))
+        coil = VGroup(*[Line(((-0.3) ** k, 2 - 0.2 * k, 0),
+                             ((0.3) ** k, 2 - 0.2 * k - 0.1, 0))
                         for k in range(6)]).move_to(self._pos(s, (0, 1, 0)))
         mass = Rectangle(width=0.5, height=0.5, color="BLUE").move_to(self._pos(s, (0, -0.5, 0)))
         return VGroup(base, coil, mass)
@@ -293,13 +422,11 @@ class UniversalPhysicsScene(Scene, SaemLabsBranding):
     def _prim_orbit(self, s):
         el = Ellipse(width=s.get("width", 4.0), height=s.get("height", 2.5),
                      color="GREY").move_to(self._pos(s))
-        body = Dot(el.point_from_proportion(0.0), radius=0.12, color="YELLOW")
-        return VGroup(el, body)
+        return VGroup(el, Dot(el.point_from_proportion(0.0), radius=0.12, color="YELLOW"))
 
     def _prim_ray(self, s):
-        a = tuple(s.get("start", [-3, 0, 0]))
-        b = tuple(s.get("end", [3, 0, 0]))
-        return Arrow(a, b, buff=0, color="YELLOW", stroke_width=2)
+        return Arrow(tuple(s.get("start", [-3, 0, 0])), tuple(s.get("end", [3, 0, 0])),
+                     buff=0, color="YELLOW", stroke_width=2)
 
     def _prim_particle_gas(self, s):
         box = Rectangle(width=4.0, height=3.0).move_to(self._pos(s))
@@ -331,36 +458,30 @@ class UniversalPhysicsScene(Scene, SaemLabsBranding):
             t = t_end * k / 60.0
             x = v0 * math.cos(ang) * t
             y = v0 * math.sin(ang) * t - 0.5 * g * t * t
-            pts.append(((-3.0 + scale * x), (-2.5 + scale * y), 0.0))
+            pts.append((-3.0 + scale * x, -2.5 + scale * y, 0.0))
         path.set_points_smoothly(pts)
-        ball = Dot(pts[0], radius=0.12, color="RED")
-        return VGroup(path, ball)
+        return VGroup(path, Dot(pts[0], radius=0.12, color="RED"))
 
     def _prim_physics_simulation(self, s):
-        bodies = s.get("bodies", [])
         mobs = VGroup()
-        for b in bodies[:8]:
+        for b in s.get("bodies", [])[:8]:
             p = b.get("position", [0, 0])
             mobs.add(Dot((p[0], p[1], 0.0), radius=float(b.get("radius", 0.15)),
                          color=b.get("color", "YELLOW")))
         return mobs
 
     def _prim_equation_morph(self, s):
-        steps = s.get("steps", [])
         mobs = VGroup()
-        for st in steps[:6]:
+        for st in s.get("steps", [])[:6]:
             try:
                 mobs.add(MathTex(st, font_size=26))
             except Exception:
-                FAILED.append(f"equation_morph:{st[:20]}")
-        mobs.arrange(DOWN, buff=0.25).move_to(self._pos(s, (0, 0, 0)))
-        return mobs
+                self.failed.append(f"equation_morph:{st[:20]}")
+        return mobs.arrange(DOWN, buff=0.25).move_to(self._pos(s, (0, 0, 0)))
 
     def _prim_numerical_chain(self, s):
-        lines = s.get("lines", [])
-        mobs = VGroup(*[Text(str(l), font_size=20) for l in lines[:8]])
-        mobs.arrange(DOWN, buff=0.2, aligned_edge=LEFT).move_to(self._pos(s, (0, 0, 0)))
-        return mobs
+        mobs = VGroup(*[Text(str(l), font_size=20) for l in s.get("lines", [])[:8]])
+        return mobs.arrange(DOWN, buff=0.2, aligned_edge=LEFT).move_to(self._pos(s, (0, 0, 0)))
 
     def _prim_warning_box(self, s):
         t = Text(str(s.get("text", "!")), font_size=22, color="RED")
@@ -373,33 +494,25 @@ class UniversalPhysicsScene(Scene, SaemLabsBranding):
         opts.arrange(DOWN, buff=0.15, aligned_edge=LEFT)
         return VGroup(q, opts.next_to(q, DOWN, buff=0.3)).move_to(self._pos(s, (0, 1, 0)))
 
-    def _prim_live_label(self, s):
+    def _prim_live_label(self, s):            # D4 fixed: linear, not None
         tracker = ValueTracker(0.0)
         label = always_redraw(lambda: Text(
             f"{s.get('prefix', 't')} = {tracker.get_value():.2f} {s.get('unit', '')}",
             font_size=20).move_to(self._pos(s)))
         self.add(label)
         self.play(tracker.animate.set_value(float(s.get("to", DURATION))),
-                  run_time=min(4.0, DURATION / 2), rate_func=None)
+                  run_time=min(4.0, DURATION / 2), rate_func=linear)
         return None
 
     def _prim_group(self, s):
         kids, _ = self.build_primitives(s.get("children", []))
         return VGroup(*kids.values()) if kids else None
 
-    def write_report(self, primitive_count):
-        report = {
-            "video_id": ROW.get("video_id"),
-            "primitive_count": primitive_count,
-            "failed_primitives": FAILED,
-            "duration_sec": DURATION,
-            "orientation": ORIENT,
-        }
-        Path(JOB.get("report_path", "report.json")).write_text(
-            json.dumps(report, ensure_ascii=False), encoding="utf-8")
 
-class Universal3DScene(ThreeDScene, SaemLabsBranding):
+# ---- 3D scene -----------------------------------------------------------
+class Universal3DScene(ReportMixin, ThreeDScene, SaemLabsBranding):
     def construct(self):
+        self._init_report()
         self.set_camera_orientation(phi=70 * PI / 180, theta=-30 * PI / 180)
         visuals = safe_json_loads(ROW.get("visual_data_json"), []) or []
         self.add(Text(ROW.get("header_title", ""), font_size=30).to_edge(UP))
@@ -416,14 +529,32 @@ class Universal3DScene(ThreeDScene, SaemLabsBranding):
                                height=float(spec.get("height", 1.5)))
                 else:
                     mob = Sphere(radius=float(spec.get("radius", 1.0)))
-                p = spec.get("position", [0, 0, 0])
-                mob.move_to(p)
+                mob.move_to(spec.get("position", [0, 0, 0]))
                 self.play(Create(mob), run_time=1.0)
             except Exception as e:
-                FAILED.append(f"3d:{kind}:{e}")
+                self.failed.append(f"3d:{kind}:{e}")
         self.wait(2.0)
-        UniversalPhysicsScene.write_report(self, len(visuals))
+        self.write_report(len(visuals))       # D7 fixed: mix-in, not sibling call
+
+
+# ---- parity hooks for tools/engine_check.py ----------------------------
+def routed_types():
+    own = {n[len("_prim_"):] for n in dir(UniversalPhysicsScene)
+           if n.startswith("_prim_")}
+    return own | set(engine_table())
+
+
+def parity_report():
+    try:
+        import schema_validator as sv
+        known = set(sv.KNOWN_PRIMITIVES)
+    except Exception:
+        known = set()
+    routed = routed_types()
+    return {"unrouted": sorted(known - routed),
+            "unknown": sorted(routed - known)}
+
 
 if __name__ == "__main__":
-    print("render_universal is driven by manim with SAEM_JOB set; "
+    print("render_universal (gen-2) is driven by manim with SAEM_JOB set; "
           "see batch_runner.py")
