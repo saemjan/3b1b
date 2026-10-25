@@ -48,6 +48,38 @@ M_E = 9.1093837015e-31
 
 REGISTRY: dict = {}
 
+# ---- responsibility contract (frozen, A5-witnessed) -----------------------
+# This engine OWNS:  (1) concept registry: params -> pure models -> closed-form
+# witnesses;  (2) recipe compilation: model output -> storyboard rows using ONLY
+# primitives routed elsewhere, plus "concept_map", whose route lives here as the
+# engine's single visual contract;  (3) row emission for the factory.
+# It DOES NOT OWN: new manim primitive surface, rendering, audio, style genome
+# (it consumes ctx/genome), parity repairs. Expanding KNOWN_PRIMITIVES is a
+# schema+renderer decision, never a content-generation one.
+ROUTED_MANIFEST = frozenset({
+    "graph", "vector", "dot", "line", "polygon", "ellipse", "circle",
+    "energy_bar", "wave", "orbit", "ray", "number_line",
+    "projectile_motion", "physics_simulation", "numerical_chain",
+    "equation_morph", "concept_map", "quiz_frame", "live_label", "text",
+})
+
+
+def live_parity():
+    """CI hook: manifest vs live route tables (engine_check stubs manim)."""
+    live = set()
+    try:
+        import render_universal as ru
+        live |= {n[len("_prim_"):] for n in dir(ru.UniversalPhysicsScene)
+                 if n.startswith("_prim_")}
+        for mod in ru.ENGINE_MODULES:
+            try:
+                live |= set(getattr(__import__(mod), "ROUTE_TABLE", {}))
+            except Exception:
+                pass
+    except Exception:
+        return {"manifest_unchecked": sorted(ROUTED_MANIFEST)}
+    return {"unrouted_manifest": sorted(ROUTED_MANIFEST - live)}
+
 
 # ---------------------------------------------------------------- helpers
 def _num(value, name, lo=None, hi=None):
