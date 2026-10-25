@@ -94,6 +94,16 @@
 } pure
   cpp "/* filled by Registrar */"
 
+- name: Golden QCOS witness (A5)
+        run: |
+          set -o pipefail
+          python3 tools/golden_qcos.py check 2>&1 | tee reports/golden_qcos.log
+
+      - name: Canon lint (one canon, four tongues)
+        run: |
+          set -o pipefail
+          python3 tools/canon_lint.py 2>&1 | tee reports/canon_lint.log
+
 @method qcos.boot {
   out Any
 } pure
