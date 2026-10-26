@@ -1,34 +1,28 @@
 #!/usr/bin/env python3
-"""Physics Oracle v3: the first gate of the honest pipeline.
+"""Physics Oracle v4 (gen-3): the first gate of the honest pipeline.
 
-Judges a CSV row on twelve counts before any render:
-  1  visual_data_json / equations_json / beats_json parse (CSV-tolerant)
-  2  primitive types known
-  3  primitive required fields and numeric ranges (SPEC table)
-  4  numeric canon: dry-run the domain engines, quote their refusals
-  5  restricted expressions (one variable x, allow-listed functions)
-  6  LaTeX sanity (braces, \\left/\\right, \\begin/\\end, smart quotes)
-  7  orientation-aware frame bounds and near-edge warnings
-  8  cross-field consistency (beat focus, duplicate ids, word band)
-  9  narration trust (impossible claims = error; unsourced = warn)
- 10  size caps (points/samples/rectangles/matrix dim)
- 11  empty-scene refusal
- 12  receipt: version + digest of the judged row (provenance)
+Judges a CSV row before any render. One canon everywhere:
+  * expressions   -> delegated to calculus_engine.compile_expression; the
+                     local fallback allow-set is byte-identical to the
+                     renderer's (no max/min drift, parity witness in selftest)
+  * spoken words  -> text_normalizer (same ruler as schema_validator)
+  * numerics      -> dry-run delegation to domain engines, counted in the
+                     receipt so a renamed engine is visible in CI (A5)
+
+Receipt (A2/A5): report() returns schema_version, oracle_version, digest of
+the judged row, delegation counts, spoken-word band. Nothing hidden.
 
 Severity model: "[error] ..." refuses the row; "[warn] ..." advises.
 ok == (no errors). Warnings never block unless the caller says --strict.
 
-Stdlib-only at import; domain engines are imported opportunistically so
-the numeric canon is shared, and every delegation is counted in the
-report so a silent drift (engine renamed) is visible in CI.
-
 Usage:
     from tools.physics_oracle import validate_row, report
     ok, violations = validate_row(row)
-
     python3 tools/physics_oracle.py content_batch.csv [--strict] [--json]
     python3 tools/physics_oracle.py --selftest
 """
+from __future__ import annotations
+
 import ast
 import csv
 import hashlib
@@ -39,7 +33,8 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
-ORACLE_VERSION = 3
+ORACLE_VERSION = 4
+SCHEMA_VERSION = 3
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -61,11 +56,13 @@ try:
     import linear_algebra_engine as _la
 except Exception:
     _la = None
+try:
+    import text_normalizer as _TN
+except Exception:
+    _TN = None
 
-FRAME = {
-    "vertical": (-4.5, 4.5, -8.0, 8.0),
-    "horizontal": (-8.0, 8.0, -4.5, 4.5),
-}
+FRAME = {"vertical": (-4.5, 4.5, -8.0, 8.0),
+         "horizontal": (-8.0, 8.0, -4.5, 4.5)}
 WORDS_PER_SEC = (1.87, 3.0)
 CAPS = {"points": 256, "samples": 256, "rectangles": 256,
         "matrix_dim": 8, "formula_lines": 8}
@@ -130,7 +127,7 @@ SPEC = {
         "dim3_only": {"sphere", "cube", "cylinder", "cone"},
         "dims": {1, 2, 3}},
     "electric_field": {"required": ["charges"], "cap_samples": True},
-    "magnetic_field": {"required": ["wires"]},
+    "magnetic_field": {"required": ["wires"], "cap_samples": True},
     "electromagnetic_wave": {
         "ranges": {"frequency": (0, None), "speed": (0, None),
                    "length": (0, None)}},
@@ -163,10 +160,8 @@ SPEC = {
     "riemann_sum": {"cap_rectangles": True},
 }
 
-
 # ---------- helpers ------------------------------------------------------
 def safe_json_loads(cell, default):
-    """Same tolerant loader as validator and renderer: one canon."""
     if cell is None:
         return default
     s = cell.strip() if isinstance(cell, str) else cell
@@ -191,34 +186,66 @@ def _in_range(v, lo, hi):
     return (lo is None or v >= lo) and (hi is None or v <= hi)
 
 
-_ALLOWED_FUNCS = {"abs", "acos", "asin", "atan", "ceil", "cos", "cosh",
-                  "exp", "floor", "log", "max", "min", "sin", "sinh",
-                  "sqrt", "tan", "tanh"}
+def _spoken_words(script: str) -> int:
+    """One canon with schema_validator: what XTTS will actually say."""
+    if _TN is not None:
+        fn = getattr(_TN, "spoken_word_count", None)
+        if fn:
+            try:
+                return int(fn(script))
+            except Exception:
+                pass
+        norm = getattr(_TN, "normalize", None)
+        if norm:
+            try:
+                return len(norm(script).split())
+            except Exception:
+                pass
+    return len(script.split())
+
+
+# expression canon: renderer's exact function set, no drift allowed
+_CANON_FUNCS = {"abs", "acos", "asin", "atan", "ceil", "cos", "cosh",
+                "exp", "floor", "log", "sin", "sinh", "sqrt", "tan", "tanh"}
 
 
 def check_expression(expr):
-    """Restricted AST policy, identical to the renderer's evaluator."""
-    errs = []
+    """Restricted AST policy == the renderer's evaluator (one canon)."""
     if not isinstance(expr, str):
         return ["expression must be a string"]
     if not (1 <= len(expr) <= 200):
-        errs.append("expression length must be 1-200")
+        return ["expression length must be 1-200"]
+    if _calc is not None and hasattr(_calc, "compile_expression"):
+        try:
+            _calc.compile_expression(expr)
+            return []
+        except ValueError as e:
+            return [str(e)]
+        except Exception as e:
+            return [f"engine raised {type(e).__name__}"]
     src = expr.replace("^", "**")
     try:
         tree = ast.parse(src, mode="eval")
     except SyntaxError as e:
         return [f"expression does not parse: {e}"]
+    errs = []
     for n in ast.walk(tree):
         if isinstance(n, ast.Name):
             if n.id not in ("x", "pi", "e"):
                 errs.append(f"expression variable '{n.id}' not allowed (only x)")
         elif isinstance(n, ast.Call):
             fn = n.func.id if isinstance(n.func, ast.Name) else "?"
-            if fn not in _ALLOWED_FUNCS:
+            if fn not in _CANON_FUNCS:
                 errs.append(f"expression function '{fn}' not allowed")
         elif isinstance(n, ast.Constant):
-            if not isinstance(n.value, (int, float)):
-                errs.append("expression constants must be numbers")
+            if isinstance(n.value, bool) or not isinstance(n.value, (int, float)):
+                errs.append("expression constants must be real numbers")
+        elif isinstance(n, ast.BinOp) and isinstance(n.op, ast.Pow):
+            rhs = n.right
+            if not (isinstance(rhs, ast.Constant)
+                    and isinstance(rhs.value, (int, float))
+                    and abs(rhs.value) <= 64):
+                errs.append("expression exponent must be constant <= 64")
     return errs
 
 
@@ -254,21 +281,48 @@ def _engine(fn, *a, **kw):
         return "error", str(e)
     except TypeError:
         return "skip", ""
-    except Exception as e:  # engine bug is not the author's fault
+    except Exception as e:
         return "skip", f"engine raised {type(e).__name__}"
 
 
 # ---------- per-primitive validation -------------------------------------
+def _cap_errors(tag, v, spec):
+    errs = []
+    if spec.get("cap_samples"):
+        charges = v.get("charges")
+        if isinstance(charges, list) and len(charges) > CAPS["samples"]:
+            errs.append(f"{tag} more than {CAPS['samples']} charges")
+        cols, rows = v.get("columns"), v.get("rows")
+        if isinstance(cols, int) and isinstance(rows, int) and not \
+                isinstance(cols, bool) and not isinstance(rows, bool):
+            if cols * rows > CAPS["samples"]:
+                errs.append(f"{tag} grid exceeds {CAPS['samples']} samples")
+    if spec.get("cap_rectangles"):
+        rects = v.get("rectangles")
+        if isinstance(rects, int) and not isinstance(rects, bool) \
+                and rects > CAPS["rectangles"]:
+            errs.append(f"{tag} rectangles > {CAPS['rectangles']}")
+    if spec.get("cap_matrix"):
+        m = v.get("matrix")
+        if isinstance(m, list):
+            if len(m) > CAPS["matrix_dim"] or any(
+                    isinstance(r, list) and len(r) > CAPS["matrix_dim"]
+                    for r in m):
+                errs.append(f"{tag} matrix dim > {CAPS['matrix_dim']}")
+    if isinstance(v.get("points"), list) and \
+            len(v["points"]) > CAPS["points"]:
+        errs.append(f"{tag} points > {CAPS['points']}")
+    return errs
+
+
 def check_primitive(i, v, deleg):
     errs, warns = [], []
     ptype = v.get("type")
     spec = SPEC.get(ptype, {})
     tag = f"visual[{i}] ({ptype})"
-
     for field in spec.get("required", []):
         if field not in v:
             errs.append(f"{tag} missing required field '{field}'")
-
     for field, (lo, hi) in spec.get("ranges", {}).items():
         if field in v:
             if not _num(v[field]):
@@ -277,14 +331,12 @@ def check_primitive(i, v, deleg):
                 errs.append(f"{tag} '{field}'={v[field]} outside "
                             f"[{lo if lo is not None else '-inf'}, "
                             f"{hi if hi is not None else 'inf'}]")
-
     for field in spec.get("positive", []):
         if field in v and _num(v[field]) and v[field] <= 0:
             errs.append(f"{tag} '{field}' must be > 0")
     for field in spec.get("nonneg", []):
         if field in v and _num(v[field]) and v[field] < 0:
             errs.append(f"{tag} '{field}' must be >= 0")
-
     if "kinds" in spec and v.get("kind") not in spec["kinds"]:
         errs.append(f"{tag} kind '{v.get('kind')}' not in "
                     f"{sorted(spec['kinds'])}")
@@ -297,42 +349,16 @@ def check_primitive(i, v, deleg):
             errs.append(f"{tag} dimension must be 1, 2 or 3, got {dim}")
         elif v.get("kind") in spec.get("dim3_only", set()) and dim != 3:
             errs.append(f"{tag} kind '{v.get('kind')}' requires dimension=3")
-
     if "ops" in spec:
         op = v.get("operation")
         if op not in spec["ops"]:
-            errs.append(f"{tag} operation '{op}' not in "
-                        f"{sorted(spec['ops'])}")
+            errs.append(f"{tag} operation '{op}' not in {sorted(spec['ops'])}")
         else:
             for field in spec["ops"][op]:
                 if field not in v:
                     errs.append(f"{tag}.{op} missing '{field}'")
+    errs += _cap_errors(tag, v, spec)
 
-    # caps
-    if spec.get("cap_samples"):
-        n = len(v.get("charges", []) or v.get("columns", 0) and
-                range(v.get("columns", 0) * v.get("rows", 0)) or [])
-        if isinstance(v.get("charges"), list) and \
-                len(v["charges"]) > CAPS["samples"]:
-            errs.append(f"{tag} more than {CAPS['samples']} charges")
-        if n and n != len(v.get("charges", [])):
-            if v.get("columns", 0) * v.get("rows", 0) > CAPS["samples"]:
-                errs.append(f"{tag} grid exceeds {CAPS['samples']} samples")
-    if spec.get("cap_rectangles") and v.get("rectangles", 0) and \
-            v["rectangles"] > CAPS["rectangles"]:
-        errs.append(f"{tag} rectangles > {CAPS['rectangles']}")
-    if spec.get("cap_matrix"):
-        m = v.get("matrix")
-        if isinstance(m, list):
-            if len(m) > CAPS["matrix_dim"] or \
-                    any(isinstance(r, list) and
-                        len(r) > CAPS["matrix_dim"] for r in m):
-                errs.append(f"{tag} matrix dim > {CAPS['matrix_dim']}")
-    if ptype == "geometry" and isinstance(v.get("points"), list) and \
-            len(v["points"]) > CAPS["points"]:
-        errs.append(f"{tag} points > {CAPS['points']}")
-
-    # physics_simulation deep rules (mirror the engine's refusals)
     if ptype == "physics_simulation":
         bodies = v.get("bodies", [])
         forces = v.get("forces", [])
@@ -344,8 +370,8 @@ def check_primitive(i, v, deleg):
                 errs.append(f"{tag}.bodies[{j}] mass must be > 0")
             for k in ("position", "velocity"):
                 p = b.get(k)
-                if not (isinstance(p, list) and len(p) == 2 and
-                        all(_num(c) for c in p)):
+                if not (isinstance(p, list) and len(p) == 2
+                        and all(_num(c) for c in p)):
                     errs.append(f"{tag}.bodies[{j}].{k} must be a 2-vector "
                                 f"of finite numbers")
         for j, f in enumerate(forces if isinstance(forces, list) else []):
@@ -356,25 +382,21 @@ def check_primitive(i, v, deleg):
             for field in spec["force_types"][ft]:
                 if field not in f:
                     errs.append(f"{tag}.forces[{j}].{ft} missing '{field}'")
-            if ft == "linear_drag" and _num(f.get("coefficient")) and \
-                    f["coefficient"] < 0:
+            if ft == "linear_drag" and _num(f.get("coefficient")) \
+                    and f["coefficient"] < 0:
                 errs.append(f"{tag}.forces[{j}] drag coefficient must be >= 0")
             if ft == "central_gravity" and _num(f.get("mu")) and f["mu"] < 0:
                 errs.append(f"{tag}.forces[{j}] mu must be >= 0")
             if ft == "spring" and not ("anchor" in f or "other" in f):
                 errs.append(f"{tag}.forces[{j}] spring needs anchor or other")
-        # delegate the RK4 dry-run to the engine (small steps, fast)
         if isinstance(bodies, list) and bodies and isinstance(forces, list):
-            st, msg = _engine(
-                getattr(_psim, "simulate_system", None),
-                bodies, forces,
-                duration=min(float(v.get("duration", 1.0)), 1.0),
-                steps=min(int(v.get("steps", 20)), 50))
+            st, msg = _engine(getattr(_psim, "simulate_system", None),
+                              bodies, forces,
+                              duration=min(float(v.get("duration", 1.0)), 1.0),
+                              steps=min(int(v.get("steps", 20)), 50))
             deleg["psim"] = deleg.get("psim", 0) + (1 if st != "skip" else 0)
             if st == "error":
                 errs.append(f"{tag} engine refused: {msg}")
-
-    # engine delegation where signatures are documented
     if ptype in EXPR_TYPES and "expression" in v:
         st, msg = _engine(getattr(_calc, "compile_expression", None),
                           v["expression"])
@@ -399,7 +421,6 @@ def check_primitive(i, v, deleg):
         deleg["la"] = deleg.get("la", 0) + (1 if st != "skip" else 0)
         if st == "error":
             errs.append(f"{tag} engine refused: {msg}")
-
     return errs, warns
 
 
@@ -412,8 +433,8 @@ def check_bounds(i, v, orient):
                 _num(p[0]) and _num(p[1]):
             if not (x0 <= p[0] <= x1 and y0 <= p[1] <= y1):
                 warns.append(f"visual[{i}] '{key}' outside {orient} frame")
-            elif (min(p[0] - x0, x1 - p[0]) < 0.5 or
-                  min(p[1] - y0, y1 - p[1]) < 0.5):
+            elif min(p[0] - x0, x1 - p[0]) < 0.5 or \
+                    min(p[1] - y0, y1 - p[1]) < 0.5:
                 warns.append(f"visual[{i}] '{key}' near frame edge; may clip")
     return warns
 
@@ -439,7 +460,6 @@ def check_narration(script):
 
 # ---------- the gate ------------------------------------------------------
 def report(row: Dict[str, Any]) -> Dict[str, Any]:
-    """Full machine-readable judgment of one row."""
     errors: List[str] = []
     warns: List[str] = []
     deleg: Dict[str, int] = {}
@@ -447,7 +467,6 @@ def report(row: Dict[str, Any]) -> Dict[str, Any]:
     if orient not in FRAME:
         warns.append(f"bad orientation '{orient}'; assuming vertical")
         orient = "vertical"
-
     visuals = safe_json_loads(row.get("visual_data_json"), None)
     if visuals is None:
         errors.append("visual_data_json missing or unparseable")
@@ -455,7 +474,6 @@ def report(row: Dict[str, Any]) -> Dict[str, Any]:
     elif not isinstance(visuals, list):
         errors.append("visual_data_json must be a list")
         visuals = []
-
     equations = safe_json_loads(row.get("equations_json"), None)
     if equations is None:
         errors.append("equations_json missing or unparseable")
@@ -463,7 +481,6 @@ def report(row: Dict[str, Any]) -> Dict[str, Any]:
     elif not isinstance(equations, list):
         errors.append("equations_json must be a list")
         equations = []
-
     beats = safe_json_loads(row.get("beats_json"), None)
     if row.get("beats_json") and beats is None:
         errors.append("beats_json present but unparseable")
@@ -471,7 +488,6 @@ def report(row: Dict[str, Any]) -> Dict[str, Any]:
     if beats is not None and not isinstance(beats, list):
         errors.append("beats_json must be a list")
         beats = []
-
     ids = []
     for i, v in enumerate(visuals):
         if not isinstance(v, dict):
@@ -493,11 +509,9 @@ def report(row: Dict[str, Any]) -> Dict[str, Any]:
                        for x in check_expression(v["expression"])]
         warns += check_bounds(i, v, orient)
         ids.append(v.get("id"))
-
     dupes = {x for x in ids if x and ids.count(x) > 1}
     for d in sorted(dupes):
         warns.append(f"duplicate visual id '{d}'; beats can only hit one")
-
     for i, eq in enumerate(equations):
         if not isinstance(eq, str):
             errors.append(f"equations[{i}] must be a string")
@@ -505,7 +519,6 @@ def report(row: Dict[str, Any]) -> Dict[str, Any]:
         e, w = check_latex(eq)
         errors += [f"equations[{i}]: {x}" for x in e]
         warns += [f"equations[{i}]: {x}" for x in w]
-
     if beats:
         known_ids = set(x for x in ids if x)
         for i, b in enumerate(beats):
@@ -517,34 +530,34 @@ def report(row: Dict[str, Any]) -> Dict[str, Any]:
             f = b.get("focus")
             if f and known_ids and f not in known_ids:
                 warns.append(f"beat {i} focus '{f}' matches no visual id")
-
     script = row.get("audio_script", "") or ""
     e, w = check_narration(script)
     errors += e
     warns += w
+    words = _spoken_words(script)
     target = row.get("target_duration_sec")
     if target not in (None, ""):
         try:
             t = float(target)
-            words = len(script.split())
             if not (WORDS_PER_SEC[0] * t <= words <= WORDS_PER_SEC[1] * t):
-                warns.append(f"{words} words implausible for {t:.0f}s "
+                warns.append(f"{words} spoken words implausible for {t:.0f}s "
                              f"(band {WORDS_PER_SEC[0]*t:.0f}-"
                              f"{WORDS_PER_SEC[1]*t:.0f}); R4")
         except ValueError:
             warns.append("target_duration_sec not a number")
-
     if not visuals:
         errors.append("visual_data_json empty: scene will be blank")
-
-    violations = [f"[error] {x}" for x in errors] + [f"[warn] {x}" for x in warns]
     digest = hashlib.sha256(
         (json.dumps({k: row.get(k, "") for k in sorted(row)},
                     sort_keys=True, ensure_ascii=False)
-         + f"|oracle-v{ORACLE_VERSION}").encode("utf-8")).hexdigest()
+         + f"|oracle-v{ORACLE_VERSION}-s{SCHEMA_VERSION}").encode("utf-8")
+    ).hexdigest()
     return {"ok": not errors, "errors": errors, "warnings": warns,
-            "violations": violations, "delegations": deleg,
-            "oracle_version": ORACLE_VERSION, "digest": digest}
+            "violations": [f"[error] {x}" for x in errors]
+                          + [f"[warn] {x}" for x in warns],
+            "delegations": deleg, "spoken_words": words,
+            "oracle_version": ORACLE_VERSION,
+            "schema_version": SCHEMA_VERSION, "digest": digest}
 
 
 def validate_row(row: Dict[str, Any]) -> Tuple[bool, List[str]]:
@@ -559,49 +572,87 @@ def errors_of(violations):
 # ---------- self-test: the witness witnesses itself -----------------------
 SELFTEST = [
     ({"visual_data_json": json.dumps([{"type": "projectile_motion", "id": "p",
-       "v0": 20, "angle": 45, "g": 9.8}]),
+                                       "v0": 20, "angle": 45, "g": 9.8}]),
       "equations_json": json.dumps(["y = v_0 t - \\frac{1}{2}gt^2"]),
       "audio_script": "A projectile flies. Gravity keeps the books."},
      True, 0),
     ({"visual_data_json": json.dumps([{"type": "projectile_motion", "id": "p",
-       "v0": -5, "angle": 45, "g": 9.8}]),
-      "audio_script": "Bad launch."}, False, 1),
+                                       "v0": -5, "angle": 45, "g": 9.8}]),
+      "audio_script": "Bad launch."}, False, 0),
     ({"visual_data_json": json.dumps([{"type": "no_such_prim", "id": "x"}]),
       "audio_script": "Unknown primitive is a warning, not an error."},
      True, 1),
     ({"visual_data_json": json.dumps([{"type": "text", "id": "t",
-       "text": "hi", "pos": [0, 0, 0]}]),
+                                       "text": "hi", "pos": [0, 0, 0]}]),
       "audio_script": "According to Newton's law of cooling, nothing."},
      True, 1),
     ({"visual_data_json": json.dumps([{"type": "text", "id": "t",
-       "text": "hi", "pos": [0, 0, 0]}]),
+                                       "text": "hi", "pos": [0, 0, 0]}]),
       "audio_script": "Sound travels through a vacuum just fine."},
-     False, 1),
+     False, 0),
     ({"visual_data_json": json.dumps([{"type": "graph", "id": "g",
-       "expression": "import os"}]),
-      "audio_script": "Forbidden expression."}, False, 1),
+                                       "expression": "import os"}]),
+      "audio_script": "Forbidden expression."}, False, 0),
+    ({"visual_data_json": json.dumps([{"type": "graph", "id": "g",
+                                       "expression": "max(x, 1)"}]),
+      "audio_script": "Renderer canon forbids max; oracle must agree."},
+     False, 0),
+    ({"visual_data_json": json.dumps([
+        {"type": "electric_field", "id": "e",
+         "charges": [{"position": [i, 0, 0], "charge": 1e-9}
+                     for i in range(300)]}]),
+      "audio_script": "Too many charges."}, False, 0),
+    ({"visual_data_json": json.dumps([
+        {"type": "dot", "id": "same", "pos": [0, 0]},
+        {"type": "dot", "id": "same", "pos": [1, 1]}]),
+      "audio_script": "Duplicate ids warn."}, True, 1),
+    ({"visual_data_json": json.dumps([{"type": "dot", "id": "d",
+                                       "pos": [0, 0]}]),
+      "beats_json": json.dumps([{"type": "law", "focus": "ghost"}]),
+      "audio_script": "Beat focus warns."}, True, 1),
+    ({"visual_data_json": json.dumps([{"type": "dot", "id": "d",
+                                       "pos": [0, 0]}]),
+      "equations_json": json.dumps(["\\frac{1"]),
+      "audio_script": "Unbalanced braces error."}, False, 0),
 ]
 
 
 def selftest():
-    bad = 0
-    for i, (row, want_ok, want_warns) in enumerate(SELFTEST):
+    checks = []
+
+    def want(name, ok, detail=""):
+        checks.append((name, bool(ok), detail))
+
+    for i, (row, wok, ww) in enumerate(SELFTEST):
         r = report(row)
-        got_warns = len(r["warnings"])
-        if r["ok"] != want_ok or (want_warns and got_warns < want_warns):
-            bad += 1
-            print(f"[selftest] case {i} MISMATCH ok={r['ok']} "
-                  f"warns={got_warns} errors={r['errors']}")
-        else:
-            print(f"[selftest] case {i} ok")
-    print(f"[selftest] {len(SELFTEST) - bad}/{len(SELFTEST)} passed")
-    return 1 if bad else 0
+        want(f"case{i}", r["ok"] == wok and len(r["warnings"]) >= ww,
+             str(r["errors"][:2]))
+    r1, r2 = report(SELFTEST[0][0]), report(SELFTEST[0][0])
+    want("digest-determinism", r1["digest"] == r2["digest"]
+         and r1["schema_version"] == SCHEMA_VERSION)
+    if _psim is not None:
+        sim = {"visual_data_json": json.dumps([
+            {"type": "physics_simulation", "id": "s",
+             "bodies": [{"mass": 1.0, "position": [0, 0],
+                         "velocity": [1, 0]}],
+             "forces": [{"type": "uniform_acceleration",
+                         "acceleration": [0, -9.8]}],
+             "duration": 1.0, "steps": 20}]),
+            "audio_script": "Delegation is counted."}
+        want("delegation-counted",
+             report(sim)["delegations"].get("psim", 0) >= 1)
+    return checks
 
 
 # ---------- CLI ------------------------------------------------------------
 def main(argv):
     if "--selftest" in argv:
-        return selftest()
+        fails = 0
+        for name, ok, detail in selftest():
+            print(f"[{'ok ' if ok else 'FAIL'}] {name} "
+                  f"{detail if not ok else ''}")
+            fails += 0 if ok else 1
+        return 1 if fails else 0
     if len(argv) < 2:
         print("usage: physics_oracle.py <csv> [--strict] [--json] | --selftest")
         return 1
@@ -617,7 +668,8 @@ def main(argv):
             hard += 1
         out.append({"video_id": row.get("video_id"), **r})
         if not as_json:
-            tag = "OK  " if r["ok"] and not (strict and r["warnings"]) else "BAD "
+            tag = "OK  " if r["ok"] and not (strict and r["warnings"]) \
+                else "BAD "
             print(f"[{tag}] {row.get('video_id'):<36} "
                   f"errors={len(r['errors'])} warns={len(r['warnings'])} "
                   f"deleg={sum(r['delegations'].values())} "
