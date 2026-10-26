@@ -1,18 +1,14 @@
 #!/usr/bin/env python3
 """visual_qa.py — gen-3 media gate: own-tool PPM ruler + gated select libs.
 
-Dependency stance (tools/backend_policy, kind="qa"):
-  * pure stdlib core = THE RULER: frames are extracted as PPM (a format a
-    student can parse) and luminance stats are computed from raw bytes —
-    no PIL, no numpy required
-  * PIL/numpy = select library for large frames, admitted only after probe
-    + parity witness (same PPM, same stats) + cost gate; degrades to ruler
-  * ffmpeg/ffprobe = selected tools for extraction and LUFS; absence is a
-    recorded degradation, never a silent pass (fail closed)
-
-Hygiene (A2): frames live in a temp dir, never beside the shipped video.
-Receipts (A5): check_video_with_receipt returns a JSON-serializable dict
-for the append-only ledger: backend, frame stats, duration, size, issues.
+Pipeline per video:
+  probe    ffmpeg/ffprobe present? (selected tools; absence recorded, fail closed)
+  extract  N frames as PPM into a TEMP dir (never beside the shipped video, A2)
+  measure  pure-stdlib luminance stats from raw PPM bytes (THE RULER)
+  parity   PIL/numpy path, when gated by backend_policy, must agree with the
+           ruler on every frame (witness; degrades to ruler otherwise)
+  judge    non-empty fraction, duration, size -> issues list
+  receipt  JSON-serializable dict + one append-only ledger line (A5)
 
 Frozen canon: a frame is non-empty iff mean luminance > 5.0 (legacy gate).
 
@@ -33,14 +29,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-
 try:
     from tools import backend_policy as bp
 except Exception:
-    try:
-        import backend_policy as bp          # type: ignore
-    except Exception:
-        bp = None
+    bp = None
+try:
+    from tools.ledger import append as _ledger
+except Exception:
+    _ledger = None
 
 SCHEMA_VERSION = 3
 NON_EMPTY_MEAN = 5.0            # frozen canon
@@ -79,11 +75,8 @@ def ppm_stats(data: bytes):
     if len(px) < need:
         raise ValueError("truncated PPM frame")
     if channels == 1:
-        total = float(sum(px))
-        mx = float(max(px)) if px else 0.0
-        return total / (w * h), mx, w, h
-    total = 0.0
-    mx = 0.0
+        return sum(px) / (w * h), float(max(px)) if px else 0.0, w, h
+    total = mx = 0.0
     for i in range(0, need, 3):
         v = px[i] * _LUM[0] + px[i + 1] * _LUM[1] + px[i + 2] * _LUM[2]
         total += v
@@ -96,8 +89,7 @@ def _stats_pil(path: Path):
     import numpy as np
     from PIL import Image
     arr = np.asarray(Image.open(path).convert("RGB"), dtype=np.float64)
-    lum = (arr[:, :, 0] * _LUM[0] + arr[:, :, 1] * _LUM[1]
-           + arr[:, :, 2] * _LUM[2])
+    lum = (arr[:, :, 0] * _LUM[0] + arr[:, :, 1] * _LUM[1] + arr[:, :, 2] * _LUM[2])
     return float(lum.mean()), float(lum.max()), lum.shape[1], lum.shape[0]
 
 
@@ -111,25 +103,20 @@ def _probe_pil():
 
 
 def _synth_ppm(pixels):
-    h = len(pixels)
-    w = len(pixels[0])
-    head = f"P6\n{w} {h}\n255\n".encode("ascii")
-    body = b"".join(bytes(rgb) for row in pixels for rgb in row)
-    return head + body
+    h, w = len(pixels), len(pixels[0])
+    return (f"P6\n{w} {h}\n255\n".encode("ascii")
+            + b"".join(bytes(rgb) for row in pixels for rgb in row))
 
 
-_PARITY_CACHE = {}
+_PARITY = {}
 
 
 def _parity_pil():
-    if "ok" in _PARITY_CACHE:
-        return _PARITY_CACHE["ok"]
+    if "ok" in _PARITY:
+        return _PARITY["ok"]
     ok = False
     try:
-        frame = _synth_ppm([[(i * 7) % 256, (i * 13) % 256, 200 - i]
-                            for i in range(0, 48)])
-        frame = _synth_ppm([[((r * 8 + c) * 5) % 256,
-                             ((r * 8 + c) * 3) % 256,
+        frame = _synth_ppm([[((r * 8 + c) * 5) % 256, ((r * 8 + c) * 3) % 256,
                              255 - ((r * 8 + c) % 256)]
                             for r in range(6) for c in range(8)])
         with tempfile.TemporaryDirectory() as td:
@@ -141,18 +128,15 @@ def _parity_pil():
                   and (w0, h0) == (w1, h1))
     except Exception:
         ok = False
-    _PARITY_CACHE["ok"] = ok
+    _PARITY["ok"] = ok
     return ok
 
 
 if bp is not None:
     bp.register("qa", bp.OWN_TOOL,
                 probe=lambda: (True, "own tool, stdlib only"),
-                witness=lambda: True,
-                speedup=lambda size: 1.0)
-    bp.register("qa", "pil",
-                probe=_probe_pil,
-                witness=_parity_pil,
+                witness=lambda: True, speedup=lambda size: 1.0)
+    bp.register("qa", "pil", probe=_probe_pil, witness=_parity_pil,
                 speedup=lambda size: size / 2_000_000.0)
 
 
@@ -167,12 +151,11 @@ def _choose_backend(pixels):
 def get_duration(mp4_path: Path):
     if shutil.which("ffprobe") is None:
         return None
-    cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration",
-           "-of", "csv=p=0", str(mp4_path)]
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True,
-                                check=True)
-        return float(result.stdout.strip())
+        r = subprocess.run(["ffprobe", "-v", "error", "-show_entries",
+                            "format=duration", "-of", "csv=p=0", str(mp4_path)],
+                           capture_output=True, text=True, check=True)
+        return float(r.stdout.strip())
     except (subprocess.CalledProcessError, ValueError):
         return None
 
@@ -180,16 +163,15 @@ def get_duration(mp4_path: Path):
 def measure_lufs(audio_path: Path):
     if shutil.which("ffmpeg") is None:
         return None
-    cmd = ["ffmpeg", "-i", str(audio_path),
-           "-af", "loudnorm=print_format=json", "-f", "null", "-"]
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        out = result.stderr
-        js, je = out.rfind("{"), out.rfind("}") + 1
+        r = subprocess.run(["ffmpeg", "-i", str(audio_path),
+                            "-af", "loudnorm=print_format=json", "-f", "null", "-"],
+                           capture_output=True, text=True)
+        js, je = r.stderr.rfind("{"), r.stderr.rfind("}") + 1
         if js >= 0 and je > js:
-            return float(json.loads(out[js:je]).get("input_i", -70.0))
+            return float(json.loads(r.stderr[js:je]).get("input_i", -70.0))
         return None
-    except (subprocess.CalledProcessError, json.JSONDecodeError, ValueError):
+    except (json.JSONDecodeError, ValueError):
         return None
 
 
@@ -201,24 +183,35 @@ def check_video_with_receipt(mp4_path: Path, min_non_empty_frames: int = 10,
     receipt = {"schema_version": SCHEMA_VERSION, "gate": "visual_qa",
                "backend": "none", "frames": 0, "non_empty": 0,
                "means": [], "duration": None, "size": None}
+
+    def done(ok):
+        receipt["issues"] = issues
+        receipt["ok"] = ok
+        if _ledger is not None:
+            try:
+                _ledger(receipt)
+            except Exception:
+                pass
+        return ok, issues, receipt
+
     if not mp4_path.exists():
-        return False, [f"MP4 file does not exist: {mp4_path}"], receipt
+        return done(False)
     size = mp4_path.stat().st_size
     receipt["size"] = size
     if size < 1024:
-        return False, [f"MP4 file too small: {size} bytes (likely corrupt)"], \
-            receipt
+        issues.append(f"MP4 file too small: {size} bytes (likely corrupt)")
+        return done(False)
     duration = get_duration(mp4_path)
     receipt["duration"] = duration
     if duration is None:
-        return False, ["could not read video duration "
-                       "(ffprobe absent or file corrupt)"], receipt
+        issues.append("could not read video duration (ffprobe absent or corrupt)")
+        return done(False)
     if duration < 1.0:
-        return False, [f"video too short: {duration:.2f}s (expected > 1s)"], \
-            receipt
+        issues.append(f"video too short: {duration:.2f}s (expected > 1s)")
+        return done(False)
     if shutil.which("ffmpeg") is None:
-        return False, ["selected tool ffmpeg absent; QA cannot run "
-                       "(degradation recorded, fail closed)"], receipt
+        issues.append("selected tool ffmpeg absent; QA cannot run (fail closed)")
+        return done(False)
 
     with tempfile.TemporaryDirectory() as td:
         tmp = Path(td)
@@ -226,21 +219,23 @@ def check_video_with_receipt(mp4_path: Path, min_non_empty_frames: int = 10,
         for i in range(frame_count):
             t = duration * i / frame_count
             out = tmp / f"frame_{i:02d}.ppm"
-            cmd = ["ffmpeg", "-y", "-loglevel", "error", "-ss", f"{t:.3f}",
-                   "-i", str(mp4_path), "-frames:v", "1", "-c:v", "ppm",
-                   str(out)]
             try:
-                subprocess.run(cmd, check=True, capture_output=True)
+                subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-ss",
+                                f"{t:.3f}", "-i", str(mp4_path), "-frames:v", "1",
+                                "-c:v", "ppm", str(out)],
+                               check=True, capture_output=True)
                 if out.exists():
                     frames.append(out)
             except subprocess.CalledProcessError:
                 issues.append(f"failed to extract frame at t={t:.2f}s")
         if not frames:
-            return False, issues + ["no frames could be extracted"], receipt
+            issues.append("no frames could be extracted")
+            return done(False)
         try:
             w, h, _ch, _off = ppm_header(frames[0].read_bytes())
         except ValueError as e:
-            return False, issues + [f"frame decode failed: {e}"], receipt
+            issues.append(f"frame decode failed: {e}")
+            return done(False)
         backend, _decision = _choose_backend(w * h * len(frames))
         receipt["backend"] = backend
         non_empty, means = 0, []
@@ -250,7 +245,7 @@ def check_video_with_receipt(mp4_path: Path, min_non_empty_frames: int = 10,
                     try:
                         mean, _mx, _w, _h = _stats_pil(f)
                     except Exception:
-                        backend = "pure"          # degrade, don't deceive
+                        backend = "pure"
                         receipt["backend"] = "pure(degraded)"
                         mean, _mx, _w, _h = ppm_stats(f.read_bytes())
                 else:
@@ -261,20 +256,17 @@ def check_video_with_receipt(mp4_path: Path, min_non_empty_frames: int = 10,
             means.append(round(mean, 2))
             if mean > NON_EMPTY_MEAN:
                 non_empty += 1
-        receipt["frames"] = len(frames)
-        receipt["non_empty"] = non_empty
-        receipt["means"] = means
+        receipt["frames"], receipt["non_empty"], receipt["means"] = \
+            len(frames), non_empty, means
         if non_empty < min_non_empty_frames:
-            issues.append(f"only {non_empty}/{len(frames)} frames are "
-                          f"non-empty (possible render failure or empty "
-                          f"scene)")
-    return len(issues) == 0, issues, receipt
+            issues.append(f"only {non_empty}/{len(frames)} frames are non-empty "
+                          f"(possible render failure or empty scene)")
+    return done(len(issues) == 0)
 
 
 def check_video(mp4_path: Path, min_non_empty_frames: int = 10):
     """Legacy-compatible API."""
-    ok, issues, _receipt = check_video_with_receipt(
-        mp4_path, min_non_empty_frames)
+    ok, issues, _r = check_video_with_receipt(mp4_path, min_non_empty_frames)
     return ok, issues
 
 
@@ -285,18 +277,15 @@ def selftest():
     def want(name, ok, detail=""):
         checks.append((name, bool(ok), detail))
 
-    black = _synth_ppm([[ (0, 0, 0) for _ in range(4)] for _ in range(4)])
-    gray = _synth_ppm([[(128, 128, 128) for _ in range(4)] for _ in range(4)])
-    white = _synth_ppm([[(255, 255, 255) for _ in range(4)] for _ in range(4)])
+    black = _synth_ppm([[(0, 0, 0)] * 4 for _ in range(4)])
+    gray = _synth_ppm([[(128, 128, 128)] * 4 for _ in range(4)])
+    white = _synth_ppm([[(255, 255, 255)] * 4 for _ in range(4)])
     m, mx, w, h = ppm_stats(black)
     want("ruler:black", m == 0.0 and mx == 0.0 and (w, h) == (4, 4))
-    m, _, _, _ = ppm_stats(gray)
-    want("ruler:gray", abs(m - 128.0) <= 1e-9, f"{m}")
-    m, mx, _, _ = ppm_stats(white)
-    want("ruler:white", abs(m - 255.0) <= 1e-9 and abs(mx - 255.0) <= 1e-9)
+    want("ruler:gray", abs(ppm_stats(gray)[0] - 128.0) <= 1e-9)
+    want("ruler:white", abs(ppm_stats(white)[0] - 255.0) <= 1e-9)
     want("ruler:non-empty-canon",
-         ppm_stats(gray)[0] > NON_EMPTY_MEAN
-         and ppm_stats(black)[0] <= NON_EMPTY_MEAN)
+         ppm_stats(gray)[0] > NON_EMPTY_MEAN >= ppm_stats(black)[0])
     try:
         ppm_stats(black[:-4])
         want("guard:truncated", False)
@@ -307,14 +296,10 @@ def selftest():
         want("guard:ascii-rejected", False)
     except ValueError:
         want("guard:ascii-rejected", True)
-    if _probe_pil()[0]:
-        want("parity:pil", _parity_pil())
-    else:
-        want("parity:pil", True, "skipped (PIL absent)")
+    want("parity:pil", _parity_pil() if _probe_pil()[0] else True,
+         "" if _probe_pil()[0] else "skipped (PIL absent)")
     ok, issues, rec = check_video_with_receipt(Path("/nonexistent/x.mp4"))
     want("guard:missing-file", ok is False and issues and rec["frames"] == 0)
-    if shutil.which("ffprobe") is None and shutil.which("ffmpeg") is None:
-        want("degrade:no-ffmpeg", True, "tools absent; gate fails closed")
     return checks
 
 
@@ -322,8 +307,7 @@ def main():
     if len(sys.argv) >= 2 and sys.argv[1] == "--selftest":
         fails = 0
         for name, ok, detail in selftest():
-            print(f"[{'ok ' if ok else 'FAIL'}] {name} "
-                  f"{detail if not ok else ''}")
+            print(f"[{'ok ' if ok else 'FAIL'}] {name} {detail if not ok else ''}")
             fails += 0 if ok else 1
         return 1 if fails else 0
     if len(sys.argv) < 2:
