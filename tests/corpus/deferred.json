@@ -1,0 +1,15 @@
+[
+  {"method": "papers.parse",     "since": "2026-01-01", "until": "2026-12-31", "reason": "JS ruler diverges from C++ core; scope doc pending"},
+  {"method": "papers.fromRows",  "since": "2026-01-01", "until": "2026-12-31", "reason": "JS ruler diverges from C++ core; scope doc pending"},
+  {"method": "papers.splitMCQ",  "since": "2026-01-01", "until": "2026-12-31", "reason": "JS ruler diverges from C++ core; scope doc pending"},
+  {"method": "papers.normAnswer","since": "2026-01-01", "until": "2026-12-31", "reason": "JS ruler diverges from C++ core; scope doc pending"},
+  {"method": "papers.keyMap",    "since": "2026-01-01", "until": "2026-12-31", "reason": "JS ruler diverges from C++ core; scope doc pending"},
+  {"method": "papers.autoTag",   "since": "2026-01-01", "until": "2026-12-31", "reason": "JS ruler diverges from C++ core; scope doc pending"},
+  {"method": "papers.script",    "since": "2026-01-01", "until": "2026-12-31", "reason": "JS ruler diverges from C++ core; scope doc pending"},
+  {"method": "bank.stats",       "since": "2026-01-01", "until": "2026-12-31", "reason": "JS ruler diverges from C++ core; scope doc pending"},
+  {"method": "bank.rows",        "since": "2026-01-01", "until": "2026-12-31", "reason": "JS ruler diverges from C++ core; scope doc pending"},
+  {"method": "bank.isTestable",  "since": "2026-01-01", "until": "2026-12-31", "reason": "JS ruler diverges from C++ core; scope doc pending"},
+  {"method": "paper.rows",       "since": "2026-01-01", "until": "2026-12-31", "reason": "JS ruler diverges from C++ core; scope doc pending"},
+  {"method": "core.hash",        "since": "2026-01-01", "until": "2026-12-31", "reason": "constitution-hash canon pending (os.md P9)"},
+  {"method": "core.info",        "since": "2026-01-01", "until": "2026-12-31", "reason": "info envelope fields differ per tongue; schema freeze pending"}
+]
