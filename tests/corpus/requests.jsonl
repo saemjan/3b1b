@@ -1,0 +1,14 @@
+{"id":1,"method":"qcos.boot","args":{}}
+{"id":2,"method":"qcos.gate","args":{"op":"latch","args":{"x":1e999}}}
+{"id":3,"method":"qcos.lower","args":{"want":"store","key":"m","value":5}}
+{"id":4,"method":"qcos.exec","args":{"cir":{"shape":"LINE","steps":[{"step":0,"op":"latch","key":"a","value":2,"sync":"barrier"},{"step":1,"op":"latch","key":"b","value":3,"sync":"barrier"},{"step":2,"op":"add","a":"a","b":"b","dst":"c","sync":"barrier"}]}}}
+{"id":5,"method":"qcos.read","args":{"key":"c"}}
+{"id":6,"method":"qcos.cost","args":{"cir":{"shape":"LINE","steps":[{"step":0,"op":"latch","key":"a","value":2,"sync":"barrier"},{"step":1,"op":"latch","key":"b","value":3,"sync":"barrier"},{"step":2,"op":"add","a":"a","b":"b","dst":"c","sync":"barrier"}]}}}
+{"id":7,"method":"qcos.provenance","args":{}}
+{"id":8,"method":"gen.topics","args":{}}
+{"id":9,"method":"gen.vectors","args":{}}
+{"id":10,"method":"gen.format","args":{}}
+{"id":11,"method":"gen.hash32","args":{"s":"saem"}}
+{"id":12,"method":"papers.script","args":{"id":"feynman_v2_ch01"}}
+{"id":13,"method":"bank.stats","args":{"seed":11}}
+{"id":14,"method":"core.hash","args":{}}
