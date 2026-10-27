@@ -1,339 +1,324 @@
-# 🎬 Feynman Physics Shorts × 🧠 QCOS Core — Saem Unified
+# 🎬 Saem Unified — Feynman Physics Shorts × 🧠 QCOS Core
 
 **Turn Feynman's lectures into narrated, animated shorts — with a constitutional,
-self-growing cognitive core underneath.**
+self-growing, quantum-cognitive core underneath.**
 
 > Tagline: NEET · JEE · MIT
-> Style: 3Blue1Brown's visual elegance · Feynman's narrative voice · Strang's pedagogical clarity
+> Style lineage: 3Blue1Brown's visual elegance · Feynman's narrative voice · Strang's pedagogical clarity
 > Formats: 1080×1920 (9:16) and 1920×1080 (16:9) · 30 fps · mastered to −14 LUFS
-> Core: C++17, standard library only · one door · four languages · zero hidden state
+> Core: C17/C++17/C# · stdlib-only rulers · one door · four tongues · zero hidden state
 
 ---
 
-## 0. What this repository is
+## 0. The Vision — why this repository exists
 
-Two bodies, one soul:
+We are building, in three converging phases, a **thinking teaching machine**:
 
-1. **The video factory** (Python): CSV in → validated → narrated (XTTS-v2 clone) →
-   animated (Manim) → quality-gated → muxed (FFmpeg) → finished MP4 + ledger entry.
-2. **The cognitive core** (`core/`, C++17): a deterministic, dependency-free engine that
-   computes answers (never guesses), prints numbers exactly as the JavaScript reference
-   prints them, runs reversible and quantum cursor machines, tracks beliefs at log-odds
-   under Bernoulli's bar of moral certainty, enforces a written constitution, and grows
-   its own libraries — only after witnesses approve them.
+| Phase | Deliverable | Convergence test |
+|---|---|---|
+| **1 (now)** | Physics & maths teaching-video model: CSV in → witnessed gates → narrated, animated, mastered MP4 + ledger receipt | every number computed, every look novel, every gate machine-checked |
+| **2** | Parallel ed-tech ecosystem: many model-nodes working as one team over the same core | nodes are stateless, receipted, liftable into parallel workers without refactoring |
+| **3** | Quantum Cognitive Operating System (QCOS) on a 4+1 RISC-V topology | Zone 0 + crypto on the isolated core; four app cores run bounded data matrices |
 
-The constitution (compiled into the core, fingerprinted by `core.hash`):
+**Why the core is C / C++ / C#:** deterministic memory, zero-overhead
+abstractions, a stable FFI floor, and native concurrency — so the phase shift
+1→2→3 never breaks the foundation. **Python is orchestration edge only**:
+it drives gates, ledgers and renderers; it never owns truth.
+
+Every piece of Phase-1 code must already be Phase-2/3-shaped:
+stateless pure functions, flat JSON-serializable payloads, C-struct-friendly
+data, callable through one IPC door.
+
+---
+
+## 1. The Law — binding for every artifact
+
+**MEANING ≠ REPRESENTATION ≠ EXECUTION ≠ HARDWARE.**
+
+| # | Invariant | What it forbids / demands |
+|---|---|---|
+| 1 | **No connectionist logic in the core** | symbolic reasoning, formal logic, exact linear algebra only; no weights, no probabilities, no DL frameworks. Belief = integer ledger tally at the 1000:1 bar, never a float |
+| 2 | **Zero-heap deterministic memory** | no `malloc/free` in hot paths; fixed compile-time tracking: `COS_WORKING_LIMIT = 32`, `COS_EPISODIC_LIMIT = 64`; exhaustion = refusal, never growth |
+| 3 | **Fail-closed discipline** | any uncertainty (non-finite value, cap breach, missing provenance, id-echo mismatch, wrong mode) → immediate task rejection or absolute node freeze; never degrade silently, never guess |
+| 4 | **Immutable constitution** | core identity cryptographically sealed (`SAEM_SOURCE_ID`, canon hash); register mutations trip integrity monitors |
+
+**Translation spine (every request, every render, every kernel call):**
+
+```
+Human Intent → Zone 0 (constitutional ethical gate)
+             → SIR  (Semantic IR: exact rational matrices, no floats)
+             → DIR  (Domain IR: masks, populations/Shape, LINE | GRID | GRAPH)
+             → CIR  (Execution IR: bounded sequential schedules, fixed horizons)
+             → MIR  (Machine IR: bare-metal micro-ops)
+```
+
+**Execution protocol:** O(N) deterministic literal scans (no hash tables, no
+next-token lookups) · exact tracking provenance at every state transition ·
+explicit byte-for-byte buffer copies using hard static structs · no
+third-party analytics, networking packages, or probabilistic approximations
+inside the core.
+
+**Topologies:** Phase I = pure, standalone, memory-safe C17 local CLI with
+zero external dependencies. Phase III = heterogeneous **4+1 RISC-V**: the +1
+isolated core runs Zone 0 and crypto hashes in physical-memory mode; four app
+cores run parallel data matrices.
+
+---
+
+## 2. The Constitution (articles & caps)
+
+Compiled into the core, fingerprinted by `core.hash`; the canon lives in
+**`qcos.cxn`** — one canon, four tongues (C++ / Python / C# / JS).
 
 - **A0** every answer is computed from the numbers in the question, never guessed
 - **A1** every number leaving the core prints exactly as the reference engine prints it
 - **A2** the door holds no hidden state; state travels in the JSON, in the caller's ledger
 - **A3** measurement and overwrite are the only irreversible acts; the core reports the debt
-- **A4** no belief is declared without moral certainty, 1000:1
+- **A4** no belief is declared without Bernoulli's bar of moral certainty, 1000:1
 - **A5** the ledger is append-only; rules without machine checks remain hypotheses
 - **A6** the JavaScript bridge is a ruler, never a fallback; the shipped product runs the core alone
 
----
-
-## 1. Architecture map
+Caps (declared once, in `qcos.cxn` and `tools/qcosc.py`'s Checker):
 
 ```
-┌──────────────────────────────────────────────┐
- clients ──────────────▶│  THE DOOR (core/src/api.*)                   │
- saem/core.py (Python)  │  named methods, JSON in → JSON out           │
- SaemQcos/Bridge.cs (C#)│  call_json never throws; C door saem_call    │
- ref_bridge.js (JS ruler)└───────────────┬──────────────────────────────┘
- saem_cli (line protocol)                │
-                                         ▼
-   gen.*  core.*  forecast.*  text.*  quantum.*  program.*  rev.*
-   cog.*  kernel.*  qcos.*  grow.*  stream.u
-                                         │
-                     ┌───────────────────┼────────────────────┐
-                     ▼                   ▼                    ▼
-            CONSTITUTIONAL GATE   L1 working (32)      PROVENANCE CHAIN
-            (fail closed)         L2 episodic (64)     (hash-linked log)
-                     │                   │                    │
-                     └───────────────────┼────────────────────┘
-                                         ▼
-                              IR LADDER: intent → SIR → DIR → CIR → MIR
-                                         ▼
-                              execution (deterministic, auditable)
-
- VIDEO FACTORY (gates in series; a rejected row never ships):
- content CSV → schema gate → physics-oracle gate → audio gate (XTTS + mastering
- + LUFS) → render gate (Manim + word-synced beats + failure tracking)
- → visual-QA gate (frames + loudness) → FFmpeg stitch → ledger → MP4
+COS_WORKING_LIMIT 32   COS_EPISODIC_LIMIT 64   COS_MAX_DELEGATION 8
+COS_MAX_ACTIONS   64   COS_NAME_MAX 64         COS_MAX_PROJECT_STOPS 8
 ```
 
----
-
-## 2. The cognitive core (`core/src/`)
-
-### 2.1 The door — `api.hpp` / `api.cpp` / `cli.cpp`
-Every capability is a named method behind one registry. `call_json` returns
-`{"ok":true,"result":…}` or `{"ok":false,"error":"…"}` and **never throws**, because the
-C door cannot unwind across languages. `saem_cli` serves the same registry over a line
-protocol (one JSON request per line, one answer per line, `id` echoed, flushed per line),
-so Python, C#, Node — any host — is an equal client. `--source-id` prints the body
-fingerprint compiled into the binary.
-
-### 2.2 The canons — `numfmt.hpp`, `json.hpp`, `util.hpp`, `sha256.hpp`
-- `jsnum` / `shortest_digits` / `round_sig`: shortest round-trip decimals, `×10ⁿ` forms,
-  `toPrecision` tie-breaking — byte-identical to JavaScript's `Number.toString`.
-- `json.hpp`: insertion-ordered objects, JS truthiness (`NaN`, `-0`, `""` falsy),
-  safe-default accessors (missing fields never throw).
-- `util.hpp`: UTF-8↔UTF-32 with U+FFFD replacement, JS whitespace/line-terminator classes,
-  the seeded random stream, the 32-bit hash, `Math.round` parity.
-- `sha256.hpp`: dependency-free SHA-256 — the soul fingerprint and receipt digest.
-
-### 2.3 The Math Brain — `gen.hpp` / `gen.cpp`
-12 topics, template table in fixed order, deterministic question generation from seeded
-streams identical to the JS reference, exact solvers (`solve`), synthetic paper banks
-(`demo_bank`: 12 topics × 3 concepts across years), hand-worked `vectors` self-checks.
-Euler's conscience: **computed, never guessed.**
-
-### 2.4 Reversible & quantum layers — `rev.hpp`, `qreg.hpp`, `spectral.hpp`
-- `rev.hpp`: NOT/CNOT/CCNOT/SWAP/FREDKIN/H/Z/S as classical reversible gates;
-  Bennett's compute–copy–uncompute for garbage-free execution (Feynman ch. 5–6).
-- `qreg.hpp`: amplitudes over two-state atoms; `QProg` is Feynman's cursor machine —
-  k+1 program-counter sites, hops that run gates on the moving branch, beam-splitter
-  hops that put **control flow itself** in superposition; halting is an amplitude.
-- `spectral.hpp`: true time evolution `e^{-iHt}` of the cursor Hamiltonian by Taylor
-  series with scaling-and-squaring (`quantum.evolve`); no matrix ever formed.
-
-### 2.5 Cognition & forecast — `cog.hpp`, `ef.hpp`
-- Beliefs at log-odds (Napier's trick: evidence multiplies, so here it adds); declaration
-  requires Bernoulli's 1000:1 moral certainty; `Learner` advises (slip/guess model) but
-  never publishes; `shots_for` schedules trials to reach the bar.
-- Forecast engine: ridge logistic regression, Platt calibration, method choice gated by
-  a held-out likelihood ratio at the moral bar, forgetting-curve mastery forecasts,
-  verdicts clamped by constitutional caps (`MAXP`, `MAX_NUDGE`, `CAP_ATTEMPTS`,
-  `KEEP_DETAIL`, `MAX_FACULTY`). This is the classical baseline the quantum-probability
-  research track (THINK H7) must beat on frozen data.
-
-### 2.6 Constitution & QCOS kernel — `cos.hpp`, `kernel.hpp`, `qcos.hpp`
-- `cos.hpp`: the articles above, governance caps, `coreHash()` (fingerprint of the
-  constitution itself — amend an article and the soul changes), receipts and audits.
-- `kernel.hpp`: `canon()` (canonical JSON text built only from the visible reading API),
-  the file-clerk blackboard, and a **Landauer ledger**: every overwrite reports the bits
-  it erased, in units of kT ln 2.
-- `qcos.hpp`: the constitutional gate (fail closed on unknown ops, non-finite numbers,
-  key bounds, cap violations, step budgets); the IR ladder
-  `lower_sir → lower_dir → lower_cir → lower_mir` (MEANING ≠ REPRESENTATION ≠
-  EXECUTION ≠ HARDWARE); L1 working memory (32 latched registers, full = fail, never
-  evict); L2 episodic ring (64 ticks); hash-chained provenance (what/where/when/why);
-  and the **12-point boot self-test**.
-
-### 2.7 The growth substrate — `grow.c`, `grow_reg.cpp`, `tools/grow.py`
-The core learns, writes, and reads — under a court:
-- `grow.learn` appends witnessed cases to an append-only, hash-chained TSV store.
-- `grow.recall` answers from witnessed cases; ungrown inputs return null, honestly.
-- `grow.distill` emits a **quarantined** C++ method file into `grown/` from ≥ N cases.
-- `tools/grow.py promote` rebuilds the body, replays every case through the live binary,
-  runs the self-test and golden fixtures — and only then lets the file join `core/src/`.
-  A refusal deletes the candidate and rebuilds. The canon never absorbs an unwitnessed rule.
-
-### 2.8 Build & body fingerprint — `tools/build.py`, `Makefile.mk`, CMake
-- `python3 tools/build.py cli|lib|all|id|verify` — compiler discovery (`$CXX`, c++, g++,
-  clang++), `-std=c++17 -Wall -Wextra -Wpedantic`, incremental, cross-platform library
-  names, and `source_id`: SHA-256 over (relative path, length, bytes) of every core file,
-  CRLF-normalized, compiled in as `SAEM_SOURCE_ID`. `verify` proves the running binary's
-  body equals the tree's body.
-- `Makefile.mk` is a **clerk, not a kitchen**: every target delegates to `build.py`.
-  Two doors may exist; two recipes may not.
+**Generated files are law-bound:** never edit `*.g.cpp / *.g.py / *.g.cs /
+*.gen.js` — edit `qcos.cxn` and re-run `python3 tools/qcosc.py qcos.cxn`.
+`tools/qcosc.py --handshake` proves all four tongues agree on method set and
+argument order; `--verify` proves disk matches canon.
 
 ---
 
-## 3. Four languages, one truth
+## 3. Architecture map (what exists today)
 
-| Language | Role | File |
-|---|---|---|
-| C++17 | the only kernel; all truth | `core/src/*` |
-| Python | OS session, ledgers, factory, gardener | `saem/core.py`, `saem/qcos_shell.py`, `tools/grow.py` |
-| C# | typed client for .NET hosts | `SaemQcos/Bridge.cs` |
-| JavaScript | the ruler (development only) | `tools/ref_bridge.js`, `tools/ref_bridge_qcos.js` |
-
-Parity witnesses: `tests/diff/run.py` (case-by-case C++ vs JS with `tol`, `ignore`,
-`regex`, `error` semantics and `null ≡ missing`), `tools/golden_qcos.py` (frozen fixtures
-for resident-state methods), `tools/parity_line.py`. A witness that sees zero cases
-fails the gate — blindness is not silence.
-
----
-
-## 4. The video factory
-
-### 4.1 Pipeline with gates (`batch_runner.py`)
 ```
-schema gate → physics-oracle gate → audio gate → render gate → visual-QA gate → stitch → ledger
+clients ──▶ THE DOOR: build/saem_cli (line protocol) ──▶ saemc gateway (tools/saemc.py)
+            │  one registry, call_json never throws, C door saem_call
+            ├─ gen.*  core.*  forecast.*  text.*  quantum.*  program.*  rev.*
+            ├─ cog.*  kernel.*  qcos.*  grow.*  stream.u
+            ├─ CONSTITUTIONAL GATE (fail closed) · L1 working(32) · L2 episodic(64)
+            └─ PROVENANCE CHAIN (hash-linked) → IR ladder SIR→DIR→CIR→MIR
+
+VIDEO FACTORY (gates in series; a rejected row never ships):
+ content CSV → schema gate → physics-oracle gate → core-id gate → audio gate
+ → render gate (manim + engines + genome skin) → visual-QA gate → stitch
+ → ledger (render + audio + style + gates receipts)
+
+CONTENT-IN (one ruler everywhere):
+ jee_model_engine (26 witnessed concept models) → factory_input / author
+ → schema_validator (spoken-word canon) → physics_oracle (SPEC-as-data)
+
+WITNESS LADDER (CI, all exit-coded 0 ok / 1 drift / 2 environment):
+ build → verify → handshake → golden_qcos → parity_line → canon_lint
+ → engine_check (imports + routing parity + selftests) → check_all → ledger verify
 ```
-Flags: `--csv --only --chunk --total-chunks --draft --retries --dry-run --format
-short|lecture|all --require-oracle --require-qa`. With `--require-*`, a rejected row never
-ships; without them the gate warns and the ledger records the warning.
 
-### 4.2 Audio chain (`generate_audio.py`, `soundscape.py`, `text_normalizer.py`)
-Normalize (units after numbers, Greek spelled out, scientific notation, LaTeX stripped) →
-XTTS-v2 clone (deterministic seed = SHA-256 of `video_id`, temperature 0.65, repetition
-penalty 3.0, CPU fallback on CUDA OOM, speaker latent cached per batch) → resample
-44.1 kHz → **mastering gate** (DC-remove, HPF 80 Hz, compress 3:1, LPF 12 kHz, −14 LUFS,
-peak 0.891) → ambient pad → measured LUFS returned for the ledger.
+Folder map:
 
-### 4.3 Render engine (`render_universal.py` + engine modules)
-Orientation-aware frames (vertical x∈[−4.5,4.5], y∈[−8,8]; horizontal x∈[−8,8],
-y∈[−4.5,4.5]), SaemLabs branding, 60+ routed primitive types across static, motion,
-self-animated, and physics-engineered families (`projectile_motion`, `physics_simulation`
-RK4, `electromagnetic_wave`, `linear_algebra`, `fluid_dynamics`, `rotational_motion`,
-`geometry` 1D/2D/3D, calculus family, interference family, …). Unknown or failing
-primitives are skipped with `[WARN]` **and recorded in the render report** — degradation,
-not deception. Beats align to word-level timings (`tools/word_sync.py`, stable-ts or
-whisper-timestamped) with equal-slice fallback.
-
-### 4.4 The gates
-- `tools/physics_oracle.py`: primitives known, LaTeX balanced, required physics fields
-  present, values physically reasonable, scenes non-empty.
-- `tools/visual_qa.py`: MP4 exists, duration sane, ≥10 of 10 sampled frames non-empty;
-  LUFS measurement helper.
-- `tools/ledger.py`: append-only render ledger (`logs/render_ledger.jsonl`) with
-  `summarize` / `export` / replay-friendly entries — the feedback loop that was missing.
+| Path | Role |
+|---|---|
+| `core/src/`, `qcos/` | C/C++ kernel, capability core, canon bindings |
+| `tools/` | gates, compilers, witnesses, bot layer (`build.py`, `qcosc.py`, `saemc.py`, `check_all.py`, `engine_check.py`, `canon_lint.py`, `parity_line.py`, `golden_qcos.py`, `qcos_handshake.py`, `ledger.py`, `backend_policy.py`, `style_genome.py`, `style_belief.py`, `style_gate.py`, `factory_input.py`, `author.py`, `extract_feynman.py`, `word_sync.py`, `visual_qa.py`, `physics_oracle.py`, `grow.py`, `think_loop.py`, `auto_fixer.py`) |
+| root engines | `physics_simulation.py`, `calculus_engine.py`, `electromagnetics_engine.py`, `geometry_engine.py`, `linear_algebra_engine.py`, `rotational_motion_engine.py`, `fluid_dynamics_engine.py`, `jee_model_engine.py`, `render_universal.py`, `batch_runner.py`, `schema_validator.py`, `generate_audio.py`, `soundscape.py`, `sound_design.py`, `text_normalizer.py` |
+| `saem/`, `SaemQcos/` | Python & C# typed clients (generated + facades) |
+| `tests/`, `knowledge_base/` | golden fixtures, parity corpora, witnessed curriculum |
+| `os.md` | **the synthesis document** — xv6/RISC-V/Euler/Strang/Juhász doctrine → QCOS construction plan P0–P12 |
 
 ---
 
-## 5. Authoring input
+## 4. The Way We Build — the gen-3 contract (from now on, this way)
 
-**Generators over hand-editing.** The canonical pattern is a small Python writer that
-uses `csv.DictWriter` + `json.dumps` (see `make_batch.py`, `tools/generate_topic_bundle.py`,
-`tools/generate_feynman_series.py`, `generate_universal_master_csvs.py`) — escaping is then
-guaranteed at every layer.
+Every engine, tool, gate, or core file written or upgraded **must** satisfy:
 
-Schema: 14 required columns
-`video_id, concept_type, header_title, tagline, question_text, option_a..d,
-correct_answer, equations_json, visual_data_json, audio_script, orientation`
-plus optional `beats_json`, `target_duration_sec`. GENERIC rows leave the six PYQ fields
-empty (seven consecutive commas). Word-count plausibility: 112–180 words @ 60 s,
-337–540 @ 180 s.
+1. **Pure stdlib ruler first.** The correctness core is stdlib-only Python or
+   freestanding C; it is *the ruler* everything else is measured against.
+2. **Selected libraries only through `tools/backend_policy.py`.**
+   probe (importable + API-complete) → witness (parity vs the ruler on a
+   frozen fixture) → cost (speedup at current size) → pin (`SAEM_BACKEND`)
+   → record (ledger) → degrade (fall back to the ruler, reason recorded).
+   numpy/scipy/PIL/TTS/ffmpeg/manim are *devices*, never truth.
+3. **Headless-importable.** No manim/numpy/torch import at module top; lazy
+   inside route/build functions. `engine_check.py` stub-imports everything.
+4. **ROUTE_TABLE v1.** Visual engines expose
+   `ROUTE_TABLE: dict[type, callable(scene, spec) -> Mobject|None]`;
+   they read `scene.ctx` (StyleContext) for color/stroke/font/placement;
+   explicit `spec["color"]` remains the teacher override.
+5. **Frozen witnesses.** Every module ships `selftest() -> [(name, ok, detail)]`
+   with closed-form rulers (Euler identities, Strang K/T/B/C determinants,
+   Rodrigues rotation, Poiseuille profile↔Q, −3 dB at cutoff, …) and a
+   `--selftest` CLI that exits non-zero on drift.
+6. **Receipts everywhere.** Every run appends a schema-stamped line
+   (`schema_version: 3`, gate name, backend, digests, debt) to the append-only
+   ledger via `tools/ledger.py`. `clear()` is unconstitutional; `rotate()`
+   prices its debt.
+7. **Determinism + fail-closed guards.** Same input → same bytes; guards raise
+   `ValueError`/return structured errors; unknown input is refused, never
+   interpolated.
+8. **Degradation, not deception.** A skipped primitive, a missing device, or a
+   fallen-back backend is *recorded* in the report and the ledger — never
+   silently hidden.
+9. **Truth frozen, representation alive** (the Teacher Rule, §6).
+10. **One canon per quantity.** Spoken words = `text_normalizer.spoken_word_count`;
+    expressions = `calculus_engine.compile_expression`; primitives =
+    `schema_validator.KNOWN_PRIMITIVES` ∩ routed set; fingerprints =
+    `tools/build.py source_id`. Two rulers for one quantity is a bug.
 
-Ready-made batches: `examples/feynman_speed_demo.csv`,
-`examples/projectile_complete_object.csv`, `examples/physics_simulation_spring_demo.csv`,
-`examples/geometry_dimensions_demo.csv`, and the six-video cross-volume batch
-(3 vertical concepts + 3 horizontal applications, one per Feynman volume) produced by
-`make_batch.py`.
-
----
-
-## 6. Testing pyramid
-
-1. **Core self-test** — 12 points at boot (`qcos.boot`): SHA-256 vector, Bell pair,
-   reversible adder, `jsnum` half-ulp, L1 latch/bounds, L2 wrap, gate allow/deny,
-   lowering determinism, exec, provenance chain.
-2. **Reference tests** — `make ref-test` (the JS reference's own suite; dev only).
-3. **Differential parity** — `make diff` / `tests/diff/run.py`: C++ vs JS case by case.
-4. **Golden fixtures** — `tools/golden_qcos.py record|check` for resident-state methods.
-5. **Python suite** — `python3 -m pytest -q` (no `|| true`: red fails the run).
-6. **Pipeline gates** — oracle + QA + LUFS on every rendered row, recorded in the ledger.
-
----
-
-## 7. CI — `.github/workflows/render_shorts.yml` (v3)
-
-`validate → build-core (verify + boot) → core-tests (parity + golden + qcos shell) →
-engine-tests → generate-validate → render (opt-in, orientation matrix, XTTS + render
-caches, --require-oracle --require-qa --resume) → reflect (think-bot ledger commit)`.
-
-Render is opt-in: `[render]` in the commit message, the `render` label, or a manual
-dispatch with `render_videos=true` (plus optional `only=` id list). Wall time without
-render ≈ 4 minutes. Concurrency-grouped; artifacts retained 7 days; logs 14.
+**New-file checklist** (CI-enforced by `check_all.py` + `engine_check.py`):
+docstring stating layer & stance · stdlib-only top imports · validation
+helpers · pure ruler functions · optional gated backend · `ROUTE_TABLE` (if
+visual) · `selftest()` · `__main__` runner · ledger receipt · no global
+mutable state · flat JSON-serializable I/O.
 
 ---
 
-## 8. Governance — `THINK.md`
+## 5. The Gate Ladder — nothing ships unjudged
 
-The CODEX loop (PERCEIVE → DIFF → DIAGNOSE → PATCH → VERIFY → DISTILL → CODEX) runs at
-every step; §3 run log and §5 KPI ledger are append-only; §2 rules require machine checks
-(R1–R29, including: R19 one canon two builders, R22 a blind witness fails the gate,
-R23 the constitutional gate fails closed, R24 provenance verifies on every read,
-R27 grown code is quarantined until witnessed, R29 promotion stays human until moral
-certainty). Hypotheses H1–H8 live in §4 until evidenced; the quantum-cognition track (H7)
-must clear gates Q0–Q4 against the classical forecast baseline before it touches
-production.
+Per row, in order; a promoted gate's refusal stops the row:
+
+```
+Gate 0 schema   (structure, JSON repair, finite-only numbers, spoken-word band,
+                 PYQ integrity, clone detection)          --require-schema
+Gate 1 oracle   (SPEC-as-data physics validation, engine dry-runs, trust rules) --require-oracle
+Gate 2 core     (saem_cli body id == tree id; stale binary fails closed)        --require-core
+Gate 3 audio    (chunked XTTS, pure concat, resample, master −14 LUFS, seeded pad)
+Gate 4 render   (manim + engines + genome skin; SAEM_SOURCE_ID receipted)
+Gate 5 QA       (PPM-ruler frame stats, duration, LUFS; ffmpeg/ffprobe probed)  --require-qa
+Ledger          (append-only receipt: gates, backends, genome, digests, debt)
+```
+
+Witness phase (CI, required): `engine_check` → `golden_qcos check` →
+`parity_line` → `canon_lint` → `qcos_handshake` → `check_all` → `ledger verify`.
+Exit codes are law: **0 = truth holds · 1 = drift/fail · 2 = environment**
+(missing binary/canon/tool — rebuild or install, never re-record).
 
 ---
 
-## 9. Quick start
+## 6. The Teacher Rule — never the same lesson twice
+
+- **Style genome** (`tools/style_genome.py`): palette family, hue, layout
+  topology, motion grammar, entrance grammar, voice grammar, pace, stroke,
+  fonts, 3D camera — derived from `(content, topic, audience, generation)`,
+  novel against `logs/style_ledger.jsonl` (distance ≥ 0.35), mutated/bred by
+  QA evidence.
+- **Beliefs over genes** (`tools/style_belief.py`): log-odds updated per QA
+  outcome; a gene value is promoted only past the 1000:1 bar (A4); the next
+  batch explores the *least certain* gene (`cog.next` discipline).
+- **Novelty gate** (`tools/style_gate.py`): a batch whose genomes repeat a
+  recent look fails CI like a physics drift would.
+- **Narration rhetoric** follows the genome's voice grammar
+  (question-first / picture-first / contrast / story-arc / myth-bust);
+  durations retune to *spoken* words, never raw tokens.
+- Numbers stay Euler-strict and witnessed; only the *look, order, voice and
+  pacing* evolve. Same physics, never the same frame or ear-print twice.
+
+---
+
+## 7. Doctrine library — what we absorbed, where it shows
+
+| Source | Doctrine now enforced in code |
+|---|---|
+| **xv6 (rev 7)** | layering; two-level locking (structure vs content); bounded buffers everywhere; sleep = lock handoff; monotonic ids; ZOMBIE two-phase completion; claim/complete dispatch; log = single commit point + boot recovery; panic = report + freeze; guard pages; copy-only boundary crossings |
+| **RISC-V (rev 5)** | 4+1 topology substrate; M/S privilege delegation as Zone 0 event filter; per-hart arenas & `tp` node address; PLIC per-core enable/threshold; trapframe as provenance record |
+| **Euler, *Elements of Algebra*** | exact rational arithmetic as SIR; closed-form identities as witnesses (Vieta, binomial sums, series closed forms) |
+| **Strang, *CSE*** | stability guards (dt·ω inside method regions); K/T/B/C difference-matrix determinants as frozen rulers; Simpson/Richardson convergence witnesses; CFL-style fail-closed step budgets |
+| **Juhász, *Modern C++ in embedded systems*** | zero-overhead abstractions; constexpr/consteval where the compiler can execute; RAII + lock-free handoff at the C++ seam; no hidden cost in templates |
+| **os.md** | the synthesis: substrate inventory, doctrine extraction, spine alignment, and the bit-by-bit construction plan **P0–P12** for the QCOS core |
+
+---
+
+## 8. Working agreements (golden rules, upgraded)
+
+1. **Generators over hand-editing.** Every new video is one new row written by
+   a generator (`factory_input`, `author`, `jee_model_engine`); nothing else
+   changes. Code is frozen; CSV is fluid.
+2. **Validate before rendering; gate before shipping.** `--require-*` flags in
+   CI/release runs; warnings are debt, errors are refusals.
+3. **LF line endings in CSVs; CRLF breaks JSON-in-CSV.**
+4. **One batch = one orientation** for clean QC.
+5. **Grown code enters only through quarantine → witness → promotion**
+   (`grow.py`); the canon never absorbs an unwitnessed rule.
+6. **Back up `saem_voice_sample.wav` separately**; it is not in the repo.
+7. **Pin for reproducibility:** `SAEM_BACKEND`, `SAEM_TTS_BACKEND`, seeds and
+   genome generations are recorded in every receipt; a replay must reproduce
+   bytes.
+8. **No hidden state, ever** (A2): paths resolve from repo root or explicit
+   env (`SAEM_LEDGER_PATH`, `SAEM_CLI`, `SAEM_PARITY_CORPUS`); temp files live
+   in temp dirs and are deleted; ledgers are the only memory.
+9. **Receipts are the product's conscience:** if an outcome isn't in the
+   ledger, it didn't happen.
+10. **Session discipline:** at pause, save state (queue position, upgraded
+    files, open witnesses); at resume, re-verify with the daily ritual below.
+
+---
+
+## 9. The daily ritual — verification commands
 
 ```bash
-# system: ffmpeg, texlive (+science/fonts), cairo/pango, build-essential, node 22
-python3.12 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
-cp /path/to/voice.wav saem_voice_sample.wav        # 10–20 s, back it up separately
-
 # core
-python3 tools/build.py cli && python3 tools/build.py verify
-python3 -m saem.qcos_shell boot                     # 12-point self-test
-make test                                           # ref-test + diff + pytest
+python3 tools/build.py all && python3 tools/build.py verify
+python3 tools/qcosc.py qcos.cxn --verify && python3 tools/qcosc.py qcos.cxn --handshake
+python3 tools/qcos_handshake.py            # four-tongue byte parity
+python3 tools/golden_qcos.py check         # resident-state witness
+python3 tools/parity_line.py               # C++ core vs JS ruler
+python3 tools/canon_lint.py                # canon ↔ Registrar ↔ bridges
+python3 tools/engine_check.py --github-summary   # imports + routing parity + all selftests
+python3 tools/check_all.py --github-summary      # universal auditor + witness ladder
+python3 tools/ledger.py verify && python3 tools/style_gate.py logs/style_ledger.jsonl content_batch.csv
 
-# factory
-python3 schema_validator.py content_batch.csv --require-oracle
-python3 batch_runner.py --only <video_id> --draft   # fast preview
-python3 batch_runner.py --require-oracle --require-qa
+# engines & tools (each exits non-zero on drift)
+for m in physics_simulation calculus_engine electromagnetics_engine geometry_engine \
+         linear_algebra_engine rotational_motion_engine fluid_dynamics_engine \
+         jee_model_engine text_normalizer soundscape sound_design generate_audio \
+         schema_validator physics_oracle visual_qa word_sync factory_input author \
+         extract_feynman ledger golden_qcos parity_line engine_check check_all \
+         canon_lint qcosc saemc qcos_handshake build; do
+  python3 $m.py --selftest || echo "DRIFT: $m"; done
 
-# feedback & growth
-python3 -m tools.ledger summarize
-python3 tools/grow.py witness gen.format '{"x": 3.14159}'
-python3 tools/grow.py distill gen.format 50 && python3 tools/grow.py promote gen.format
+# a batch
+python3 tools/factory_input.py            # or: python3 tools/author.py --source catalog --retune --yes
+python3 batch_runner.py --csv content_batch.csv --require-schema --require-oracle --require-core --require-qa
 ```
 
 ---
 
-## 10. File inventory (touch map)
+## 10. Queue & continuation protocol
 
-| Area | Files | Touch? |
-|---|---|---|
-| Daily input | `content_batch.csv`, generators | ✅ edit via generators |
-| Factory | `batch_runner.py`, `generate_audio.py`, `render_universal.py`, `schema_validator.py`, `soundscape.py`, `text_normalizer.py`, engine modules | 🔵 stable |
-| Gates & ledger | `tools/physics_oracle.py`, `tools/visual_qa.py`, `tools/word_sync.py`, `tools/ledger.py` | 🔵 stable |
-| Core | `core/src/*` (door, canons, brain, quantum, cognition, constitution, QCOS, growth) | 🔴 court-gated (grow/promote only) |
-| Clients | `saem/core.py`, `saem/qcos_shell.py`, `SaemQcos/Bridge.cs` | 🔵 stable |
-| Rulers & fixtures | `tools/ref_bridge*.js`, `tests/diff/*`, `tests/golden/*` | 🟡 with run# refs |
-| Governance | `THINK.md`, `knowledge/cases.tsv`, `grown/`, `logs/` | 🟡 append-only |
+**Remaining upgrades (one-by-one ritual: audit table → gen-3 rewrite →
+integration notes → verify):**
+`think_loop.py` → `grow.py` → `auto_fixer.py` → `ref_bridge.js` →
+`ref_bridge_qcos.js` → `bench_render_backends.py`; then kernel files
+`spinlock.c/h`, `vm.c` equivalents for the QCOS core per `os.md` P0–P12.
 
----
+**Ritual per file:** (1) audit against the gen-3 contract and list defects
+with severities; (2) rewrite preserving public API signatures; (3) wire
+receipts, witnesses, genome skinning, backend gates; (4) state integration
+patches for `batch_runner`/`engine_check`/workflow; (5) give exact verify
+commands. Nothing merges without its `selftest()` green.
 
-## 11. Troubleshooting (top failures)
-
-- **`[verify] STALE binary …`** — rebuild: `python3 tools/build.py cli`.
-- **Row/column misalignment** — count the seven-comma gap; regenerate via a Python writer.
-- **`[oracle] … unknown primitive`** — typo or unregistered type; the renderer skips and the report records it.
-- **MP4 with no audio** — check `temp_audio/<id>_voice.wav` size; scroll for the TTS exception.
-- **Render too slow** — `--draft` (480p15 ≈ 10× faster); CI shards with `--chunk/--total-chunks`.
-- **Parity mismatch** — read the two lines printed; numbers must match byte-for-byte (A1); last-ulp drift is only allowed inside `tol`.
-- **Promotion refused** — the grown file failed a witness; it was deleted and the body rebuilt. Read the ledger entry.
+**Memory protocol:** at every pause, record: phase status, upgraded-file
+inventory, open witnesses, queue position, and any canon/cap changes. At
+resume, re-run §9 before touching code.
 
 ---
 
-## 12. Golden rules
+## 11. Phase roadmap — convergence checklist
 
-1. Every new video is one new row, written by a generator. Nothing else changes.
-2. Code is frozen; CSV is fluid. Editing a `.py` is adding a feature, not making a video.
-3. Validate before rendering; gate before shipping (`--require-oracle --require-qa`).
-4. LF line endings only in CSVs; CRLF breaks JSON-in-CSV.
-5. Back up `saem_voice_sample.wav` separately; it is not in the repo.
-6. One batch = one orientation for clean QC.
-7. PYQs are math-checked by the oracle and by you before commit.
-8. The core grows only through quarantine, witnesses, and promotion. Never by hand.
-
----
-
-## 13. Why it is built this way (reference corpus)
-
-| Source | What it gave the system |
-|---|---|
-| Napier, *Constructio* | mantissa/exponent canon; log-domain beliefs (evidence multiplies → here adds) |
-| Bernoulli, *Ars Conjectandi* | cases → expectation; moral certainty 1000:1 as the declaration bar |
-| Euler, *Elements of Algebra* | algebra as rule-governed operation: answers computed, never guessed |
-| Feynman, *Lectures on Computation* | reversible gates & Landauer's bill (ch. 5); cursor machines & halting amplitude (ch. 6); file clerk memory (ch. 1); clocking & jams (ch. 7) |
-| Schrödinger, *Collected Papers* | evolution as `e^{-iHt}`; stationary states as the next spectral layer |
+- **Phase 1 exit criteria:** all engines gen-3 & witnessed; gate ladder green
+  in CI; style novelty enforced; ledger union complete; curriculum
+  (`knowledge_base/`) fully linked to witnessed concept models.
+- **Phase 2 exit criteria:** nodes stateless & receipted; SPSC rings between
+  workers (virtio semantics: publish → notify → sleep → reclaim, index-as-id,
+  in-band status verification); team scheduler = bounded CIR steps; the C#
+  and JS clients pass handshake from separate machines.
+- **Phase 3 exit criteria:** C17 freestanding kernel boots on RISC-V; Zone 0
+  on the +1 core in physical-memory mode; app cores run LINE/GRID/GRAPH
+  populations over 32/64-slot arenas; integrity monitor freezes on any
+  constitutional breach; `os.md` P0–P12 all witnessed.
 
 ---
 
-## 14. Credits & license
-
-Built on Manim Community, Coqui TTS (XTTS-v2), FFmpeg, and Feynman's *Lectures on
-Physics* (I–III). Element grammar inspired by 3Blue1Brown. See `LICENSE`.
+*Sealed: this README, `qcos.cxn`, and `os.md` are the constitution. Code that
+contradicts them is a bug, however convenient. — SaemLabs*
