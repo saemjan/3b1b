@@ -288,8 +288,7 @@ python3 batch_runner.py --csv content_batch.csv --require-schema --require-oracl
 
 **Remaining upgrades (one-by-one ritual: audit table → gen-3 rewrite →
 integration notes → verify):**
-`think_loop.py` → `grow.py` → `auto_fixer.py` → `ref_bridge.js` →
-`ref_bridge_qcos.js` → `bench_render_backends.py`; then kernel files
+` the kernel files
 `spinlock.c/h`, `vm.c` equivalents for the QCOS core per `os.md` P0–P12.
 
 **Ritual per file:** (1) audit against the gen-3 contract and list defects
