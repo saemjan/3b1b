@@ -281,6 +281,9 @@ python3 tools/style_gate.py logs/style_ledger.jsonl content_batch.csv
   recorded §21 step — never ahead of it.
 - Amendments: changes to this file carry date + reason in §24;
   contradictions are resolved explicitly, never by silent edit.
+- Resume compass: `docs/STATUS.md` (volatile pointer) + `tools/where.py`
+  (live probe that asks the doors and reads the ledger). STATUS never
+  restates law (§14); where.py never writes.
 
 ## §19 — The Never-Change List
 `qcos.cxn` as single canon · append-only ledger · no hidden state in doors ·
@@ -317,6 +320,10 @@ working session: §23 pre-flight → §17 ritual → the step's work → §17 ri
 witness on 2). Resume contract: say "start step N"; step N begins only after
 step N−1's exit is verified. Deletions (🗑) execute only after their parity
 witness passes, and each deletion is ledgered as priced debt (A5).
+Step 0 (every session): run `tools/where.py`, read `docs/STATUS.md`
+"Next action", confirm the previous step's exit from the ledger. End of
+session: update STATUS.md (date, done, next, debts) and write the step's
+ledger receipt. No session ends without both.
 
 **Phase A — Unblock the witnesses (missing infrastructure)**
 1. Generate & commit canon artifacts: `python3 tools/qcosc.py qcos.cxn` →
@@ -431,6 +438,10 @@ around it.
   upgrade queue completed.
 - Rule: every future amendment appends here with date + reason.
   Contradictions are resolved explicitly in §19 terms, never by silent edit.
+- 2026-10-28 · v2.1 · Added resume compass (docs/STATUS.md + tools/where.py)
+  after studying an external handoff pattern; STATUS holds volatile state
+  only, law stays single-sourced. Reason: sessions end mid-step; re-orientation
+  cost must be zero and state must never be trusted from a stale table.
 
 Sealed. vision.md + README.md + os.md + qcos.cxn form the constitution of
 this project. Code that contradicts them is a bug, however convenient.
