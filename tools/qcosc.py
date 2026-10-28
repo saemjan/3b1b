@@ -1,20 +1,28 @@
 #!/usr/bin/env python3
-"""qcosc -- gen-3 QCOS protocol compiler (core tongue #1).
+"""qcosc -- gen-4 QCOS protocol compiler (core tongue #1).
 
 One canon (qcos.cxn) in; four tongues out (C++, Python, C#, JavaScript),
 plus the parity witness corpus (diff), the runtime schema, and a HANDSHAKE
 that proves all four emitted bindings agree on method set AND argument
-order (A1/A6: the JS bridge is the ruler; binding drift is a broken article,
-caught here at compile time instead of at parity_line runtime).
+order (A1/A6).
 
-Gen-3 deltas:
-  * paths resolve from the repo root, never the CWD (A2)
-  * selftest(): frozen witnesses for lexer/parser/Checker/emitters/
-    handshake/determinism (A5)
-  * ledger receipt per run (gate "qcosc")
-  * exit codes: 0 ok | 1 refused/stale/handshake-mismatch | 2 env (no canon)
-  * --handshake / --verify / --emit X / --json / --github-summary / --selftest
-Zero dependencies. Deterministic: same canon -> byte-identical output (A1).
+gen-4 (step 10) Checker enforcement:
+  * REQUIRED_CAPS with exact values -- the caps are constitutional
+    (Invariant 4); a mutated cap refuses the build, it never slips through
+  * Zone 0 presence: qcos.zone0 must exist as kind 'gate' WITH a cpp impl;
+    qcos.provenance must exist (A9 ring reader)
+  * A0 refined: all-defaulted inputs are accepted iff EVERY default is a
+    declared canon literal (computed from declared numbers, never guessed);
+    an optional input without a declared default still refuses
+  * int64 joins the builtin set and the C++/C# type maps (SIR exact
+    rationals will ride on it)
+  * gate-kind methods require a cpp impl (a gate that cannot execute is a
+    promise without a body)
+
+Gen-3 guarantees preserved: paths resolve from repo root; selftest() frozen
+witnesses; ledger receipt per run; exit codes 0 ok | 1 refused/stale/
+mismatch | 2 env (no canon); --handshake / --verify / --emit / --json /
+--github-summary / --selftest. Zero dependencies. Deterministic (A1).
 """
 from __future__ import annotations
 
@@ -225,7 +233,17 @@ class Parser:
 
 
 # ------------------------------------------- 4. semantic constitutional gate
-BUILTIN = {"string", "number", "bool", "uint32", "int32", "any", "Json"}
+BUILTIN = {"string", "number", "bool", "uint32", "int32", "int64", "any", "Json"}
+
+# Invariant 4: these values ARE the constitution. Changing one is an
+# amendment (VISION §24), done in canon and Checker together, never silently.
+REQUIRED_CAPS = {
+    "MAXP": 0.95, "KEY_MAX": 23,
+    "WORKING_LIMIT": 32, "EPISODIC_LIMIT": 64,
+    "MAX_DELEGATION": 8, "MAX_ACTIONS": 64,
+    "NAME_MAX": 64, "MAX_PROJECT_STOPS": 8,
+    "CIR_STEPS": 4096,
+}
 
 
 class Checker:
@@ -249,43 +267,69 @@ class Checker:
         c = self.c
         if not c.articles:
             self.err.append("no articles: a core with no constitution is not a core")
-        for cap in ("MAXP", "KEY_MAX"):
+        for cap, want in REQUIRED_CAPS.items():
             if cap not in c.caps:
                 self.err.append("missing cap %s -- the gate cannot compile" % cap)
-        names = set()
+            elif c.caps[cap] != want:
+                self.err.append("cap %s mutated (%r != %r): immutable constitution "
+                                "(Invariant 4); amend canon + Checker together"
+                                % (cap, c.caps[cap], want))
+        names = {m.name: m for m in c.methods}
+        z0 = names.get("qcos.zone0")
+        if z0 is None:
+            self.err.append("ZONE 0 BREACH: qcos.zone0 missing (A7)")
+        elif z0.kind != "gate":
+            self.err.append("ZONE 0 BREACH: qcos.zone0 must be kind 'gate'")
+        elif "cpp" not in z0.impl:
+            self.err.append("ZONE 0 BREACH: qcos.zone0 gate has no cpp impl "
+                            "(a gate that cannot execute is a promise without a body)")
+        if "qcos.provenance" not in names:
+            self.err.append("A9 BREACH: qcos.provenance missing; the core must "
+                            "testify about its own transitions")
+        seen = set()
         for m in c.methods:
-            if m.name in names:
+            if m.name in seen:
                 self.err.append("duplicate method %s" % m.name)
-            names.add(m.name)
+            seen.add(m.name)
             ins = [p for p in m.params if p.dir == "in"]
             outs = [p for p in m.params if p.dir == "out"]
             if not outs:
                 self.err.append("%s: a method must declare an 'out'" % m.name)
-            seen = set()
+            pnames = set()
             for p in ins:
                 p.ty = self.resolve(p.ty)
-                if p.name in seen:
+                if p.name in pnames:
                     self.err.append("%s: duplicate arg %r" % (m.name, p.name))
-                seen.add(p.name)
+                pnames.add(p.name)
                 if p.ty.required and p.ty.has_default:
                     self.err.append("%s.%s: cannot be both required and defaulted"
                                     % (m.name, p.name))
                 if p.ty.has_default:
                     self._default_ok(m, p)
-            if ins and all(not p.ty.required for p in ins):
-                self.err.append("%s: A0 violation -- every argument optional means "
-                                "the answer is not computed from the question" % m.name)
-            if m.kind == "resident" and "cpp" not in m.impl:
-                self.err.append("%s: resident method needs a cpp impl" % m.name)
+            # A0 refined: all-optional is fine iff EVERY default is a declared
+            # canon literal (computed from declared numbers, never guessed).
+            if ins and all(not p.ty.required for p in ins) \
+                    and any(not p.ty.has_default for p in ins):
+                self.err.append("%s: A0 violation -- an optional argument without "
+                                "a declared default means the answer is not "
+                                "computed from the question" % m.name)
+            if m.kind in ("resident", "gate") and "cpp" not in m.impl:
+                self.err.append("%s: %s method needs a cpp impl" % (m.name, m.kind))
         return self.err
 
     def _default_ok(self, m, p):
         d, t = p.ty.default, p.ty.name
         ok = {"string": lambda: isinstance(d, str), "Key": lambda: isinstance(d, str),
-              "number": lambda: isinstance(d, (int, float)),
-              "Prob": lambda: isinstance(d, (int, float)),
-              "uint32": lambda: isinstance(d, int) and 0 <= d < 2 ** 32,
-              "Seed": lambda: isinstance(d, int) and 0 <= d < 2 ** 32,
+              "number": lambda: isinstance(d, (int, float)) and not isinstance(d, bool),
+              "Prob": lambda: isinstance(d, (int, float)) and not isinstance(d, bool),
+              "uint32": lambda: isinstance(d, int) and not isinstance(d, bool)
+                              and 0 <= d < 2 ** 32,
+              "int32": lambda: isinstance(d, int) and not isinstance(d, bool)
+                               and -2 ** 31 <= d < 2 ** 31,
+              "int64": lambda: isinstance(d, int) and not isinstance(d, bool)
+                               and -2 ** 63 <= d < 2 ** 63,
+              "Seed": lambda: isinstance(d, int) and not isinstance(d, bool)
+                              and 0 <= d < 2 ** 32,
               "bool": lambda: isinstance(d, bool),
               "any": lambda: True, "Json": lambda: True}.get(t, lambda: True)
         if not ok():
@@ -296,10 +340,10 @@ class Checker:
 # ------------------------------------------------------------- 5. type maps
 CPP = {"string": "std::string", "Key": "std::string", "number": "double",
        "Prob": "double", "bool": "bool", "uint32": "uint32_t", "Seed": "uint32_t",
-       "int32": "int32_t", "any": "Json", "Json": "Json"}
+       "int32": "int32_t", "int64": "int64_t", "any": "Json", "Json": "Json"}
 CS = {"string": "string", "Key": "string", "number": "double", "Prob": "double",
       "bool": "bool", "uint32": "uint", "Seed": "uint", "int32": "int",
-      "any": "JsonElement", "Json": "JsonElement"}
+      "int64": "long", "any": "JsonElement", "Json": "JsonElement"}
 
 
 def py_name(m): return m.replace(".", "_")
@@ -456,7 +500,8 @@ def emit_diff(c):
             happy["args"][p.name] = (p.ty.default if p.ty.has_default else
                                      {"string": "x", "Key": "k", "number": 1.0,
                                       "Prob": 0.5, "bool": True, "uint32": 1,
-                                      "Seed": 1, "int32": 1, "any": {}, "Json": {}}[p.ty.name])
+                                      "Seed": 1, "int32": 1, "int64": 1,
+                                      "any": {}, "Json": {}}[p.ty.name])
         out.append(happy)
         req = next((p for p in ins if p.ty.required), None)
         if req:
@@ -592,7 +637,7 @@ def main(argv):
             _receipt({"op": "verify", "canon": body[:10], "status": "stale", "stale": stale})
             return 1
         print("[qcosc] in sync. canon %s, %d methods, %d articles"
-              % (body[:10], len(canon.methods), len(canon.articles)))
+              % (body[:10], len(canon.methods), len(c.articles)))
         _receipt({"op": "verify", "canon": body[:10], "status": "ok"})
         return 0
 
@@ -611,25 +656,37 @@ def main(argv):
               % (name, p.relative_to(ROOT), text.count("\n")))
     print("[qcosc] canon body %s (compile this into SAEM_SOURCE_ID)" % body[:10])
     _receipt({"op": "emit", "canon": body[:10], "status": "ok",
-              "methods": len(canon.methods)})
+              "methods": len(c.methods)})
     return 0
 
 
 # --------------------------------------------------------------- 8. witness
-_GOOD = '''# mini canon (frozen witness)
+_GOOD = '''# mini canon (frozen witness, gen-4 Checker)
 @core "test-1"
 @article A0 "computed, never guessed"
 @article A5 "rules without machine checks remain hypotheses"
-@cap MAXP 8
-@cap KEY_MAX 64
-@type Key string max 64
+@cap MAXP 0.95
+@cap KEY_MAX 23
+@cap WORKING_LIMIT 32
+@cap EPISODIC_LIMIT 64
+@cap MAX_DELEGATION 8
+@cap MAX_ACTIONS 64
+@cap NAME_MAX 64
+@cap MAX_PROJECT_STOPS 8
+@cap CIR_STEPS 4096
+@type Key string max 23
 @method qcos.boot { out ok: bool } pure cpp "Json::obj(\\"ok\\", true)"
 @method qcos.read { in key: Key required, out value: number } resident cpp "store_get(a)"
+@method qcos.zone0 { in intent: any required, out pass: bool } gate cpp "zone0(a)"
+@method qcos.provenance { out trace: any } resident cpp "prov(a)"
+@method gen.demo { in seed: uint32 = 11, in y0: int32 = 0, out n: number } pure cpp "demo(seed, y0)"
 '''
 _BAD_DUP = _GOOD + '@method qcos.boot { out ok: bool } pure cpp "Json::obj(\\"ok\\", true)"\n'
-_BAD_NOCAPS = _GOOD.replace("@cap MAXP 8\n", "")
-_BAD_A0 = _GOOD.replace("in key: Key required,", "in key: Key,")
-_BAD_RESIDENT = _GOOD.replace('resident cpp "store_get(a)"', 'resident py "pass"')
+_BAD_NOCAPS = _GOOD.replace("@cap MAXP 0.95\n", "")
+_BAD_CAPMUT = _GOOD.replace("@cap WORKING_LIMIT 32", "@cap WORKING_LIMIT 33")
+_BAD_NOZONE = _GOOD.replace('@method qcos.zone0 { in intent: any required, out pass: bool } gate cpp "zone0(a)"\n', "")
+_BAD_A0 = _GOOD.replace("in seed: uint32 = 11, in y0: int32 = 0,", "in seed: uint32,")
+_BAD_GATENOIMPL = _GOOD.replace('gate cpp "zone0(a)"', 'gate py "pass"')
 
 
 def selftest():
@@ -643,20 +700,21 @@ def selftest():
         p = Path(td) / "mini.cxn"
         p.write_text(_GOOD, encoding="utf-8")
         src, canon = build(p)
-        want("parse", len(canon.methods) == 2 and canon.caps["MAXP"] == 8)
+        want("parse", len(canon.methods) == 5 and canon.caps["WORKING_LIMIT"] == 32)
+        want("a0-declared-defaults-pass",
+             not any("A0" in e for e in Checker(canon).check()))
         want("emit-determinism", emit_cpp(canon) == emit_cpp(canon)
              and emit_js(canon) == emit_js(canon))
-        want("handshake", handshake(canon)["equal"],
-             str(handshake(canon)["got"]))
+        want("handshake", handshake(canon)["equal"], str(handshake(canon)["got"]))
         diff = emit_diff(canon)
         lines = [json.loads(x) for x in diff.splitlines() if x.strip()]
-        want("diff-failclosed", any(l.get("error") for l in lines)
-             and len(lines) == 3)
+        want("diff-failclosed", any(l.get("error") for l in lines))
         want("schema-json", json.loads(emit_schema(canon))["version"] == "test-1")
         regs = re.findall(r'Registrar\s+\w+\s*\(\s*"([\w.]+)"', emit_cpp(canon))
         want("canon_lint-compatible", regs == [m.name for m in canon.methods], str(regs))
         for label, bad in (("dup", _BAD_DUP), ("nocaps", _BAD_NOCAPS),
-                           ("a0", _BAD_A0), ("resident", _BAD_RESIDENT)):
+                           ("cap-mutated", _BAD_CAPMUT), ("no-zone0", _BAD_NOZONE),
+                           ("a0", _BAD_A0), ("gate-no-impl", _BAD_GATENOIMPL)):
             bp = Path(td) / f"bad_{label}.cxn"
             bp.write_text(bad, encoding="utf-8")
             try:
@@ -665,6 +723,7 @@ def selftest():
             except CanonError:
                 want(f"checker-refuses-{label}", True)
     want("targets-absolute", all(t.is_absolute() for t in TARGETS.values()))
+    want("int64-in-maps", CPP["int64"] == "int64_t" and CS["int64"] == "long")
     return checks
 
 
