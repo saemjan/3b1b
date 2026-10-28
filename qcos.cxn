@@ -1,11 +1,33 @@
 # qcos.cxn — ONE CANON, FOUR TONGUES.
-# This file is the constitutional root of all cross-language
-# communication. Types, argument ORDER, defaults and validation are
-# declared here exactly once and compiled into every binding.
-# Editing a generated .g.* file is a violation; edit this instead.
+# This file is the constitutional root of all cross-language communication.
+# Types, argument ORDER, defaults and validation are declared here exactly
+# once and compiled into every binding. Editing a generated .g.* file is a
+# violation; edit this instead and re-run: python3 tools/qcosc.py qcos.cxn
+#
+# v0.5.0 amendment (2026-10-30, §21 step 9):
+#   - removed a YAML workflow fragment that had leaked between core.methods
+#     and qcos.boot (it belongs to .github/workflows, never the canon; a '-'
+#     cannot lex here, so the Checker refused the whole file).
+#   - articles A7-A9: Medina Zone-0 vectors, bounded static memory, and
+#     provenance-as-conscience (Charter clauses 28/32/39-40: one referee,
+#     loyalty protects against treachery, mutual consultation).
+#   - caps MAX_DELEGATION / MAX_ACTIONS / NAME_MAX / MAX_PROJECT_STOPS from
+#     the README cap table; WORKING_LIMIT 32 / EPISODIC_LIMIT 64 sealed (A8).
+#   - structs Zone0Verdict / ProvenanceEntry / CapReport (flat PODs, xv6
+#     date.h/stat.h doctrine: identity and extent, never hidden content).
+#   - methods qcos.zone0 (gate), qcos.caps / qcos.claim / qcos.complete /
+#     qcos.shape (resident; xv6 claim/complete lifecycle, PLIC precedent),
+#     and real cpp impls for qcos.read / snapshot / provenance / lower /
+#     cost so no resident method is impl-less (Checker rule).
+#   - gen.topics / templates / vectors / hash32 / makeBatch / demoBank keep
+#     NO cpp impl on purpose: their truth lives in the hand core until
+#     step 11 absorbs the gen:: symbols into this canon. Until then the
+#     generated Registrar for those names is a NOT_IMPLEMENTED placeholder
+#     and the dup-audit keeps the hand Registrar (canon absorbs, never
+#     blinds). Priced in tests/corpus/canon_queue.json (A5).
+@core "0.5.0"
 
-@core "0.4.0"
-
+# ---- the constitution (A0-A6 frozen; A7-A9 added from the sources) -------
 @article A0 "every answer is computed from the numbers in the question, never guessed"
 @article A1 "every number leaving the core prints exactly as the reference engine prints it"
 @article A2 "the door holds no hidden state; state travels in the JSON, in the caller's ledger"
@@ -13,7 +35,17 @@
 @article A4 "no belief is declared without Bernoulli's bar of moral certainty, 1000:1"
 @article A5 "the ledger is append-only; rules without machine checks remain hypotheses"
 @article A6 "the JavaScript bridge is a ruler, never a fallback"
+# Medina vector I+II+III (niyyah, shari'ah bounds, mithaq & sidq): one gate
+# before SIR, refusal over approximation, parity over silence.
+@article A7 "zone 0 precedes SIR: no hidden routes (niyyah), no riba or gharar or maysir mechanics (shari'ah), byte-parity or silence (mithaq)"
+# xv6 param.h + kalloc/buddy doctrine: capacities declared before any table
+# exists; exhaustion is refusal (QCOS_ERR_BUDGET_EXHAUSTED), never growth.
+@article A8 "memory is static and bounded: working 32, episodic 64, delegation 8; exhaustion is refusal, never growth"
+# log.c single-commit-point + trapframe provenance: every transition leaves
+# a reversible trace; forgetting is a priced dissipation, not a loss (A3).
+@article A9 "every transition records provenance (step, op, keys, pre_hash); the ledger is the core's conscience"
 
+# ---- caps (declared once; enforced by tools/qcosc.py Checker) ------------
 @cap MAXP        0.95
 @cap MAX_NUDGE   0.15
 @cap CAP_ATTEMPTS 3
@@ -23,132 +55,180 @@
 @cap EPISODIC_LIMIT 64
 @cap KEY_MAX 23
 @cap CIR_STEPS 4096
+@cap MAX_DELEGATION 8
+@cap MAX_ACTIONS 64
+@cap NAME_MAX 64
+@cap MAX_PROJECT_STOPS 8
 
-# ---- types ----------------------------------------------------------
+# ---- types ----------------------------------------------------------------
 @type Key     string  max 23
 @type Prob    number  finite
 @type Seed    uint32
 @type Any     any
 
+# ---- structs (flat PODs; copy-only crossings) ------------------------------
 @struct LatchResult { ok : bool  hash : string }
 @struct ReadResult  { found : bool  value : Any }
 @struct ExecResult  { ok : bool  hash : string  trace : Any }
+# Zone 0 answers with identity + decision, never payload (qcosev doctrine).
+@struct Zone0Verdict { pass : bool  vector : string  reason : string }
+# one ring slot: (step, op, keys, pre_hash) per A9.
+@struct ProvenanceEntry { step : uint32  op : string  keys : Any  pre_hash : string }
+# live occupancy of the A8 pools; audit without introspection.
+@struct CapReport { working : uint32  episodic : uint32  delegated : uint32  actions : uint32 }
 
-# ---- Math Brain -----------------------------------------------------
+# ---- Math Brain (pure; impls frozen, parity-witnessed) ---------------------
 @method gen.make {
-  in  id    : string  required
-  in  seed  : Seed    = 1
-  out Any
+in  id    : string  required
+in  seed  : Seed    = 1
+out Any
 } pure
-  cpp "gen::question_json(gen::make(a[\"id\"].asStr(), Rng(seed)))"
-  js  "GEN.questionWith(id, {}, seed)"
+cpp "gen::question_json(gen::make(a[\"id\"].asStr(), Rng(seed)))"
+js  "GEN.questionWith(id, {}, seed)"
 
 @method gen.questionWith {
-  in  id     : string  required
-  in  seed   : Seed    = 1
-  in  params : Any     required
-  out Any
+in  id     : string  required
+in  seed   : Seed    = 1
+in  params : Any     required
+out Any
 } pure
-  cpp "gen::question_json(gen::question_with(a[\"id\"].asStr(), seed, a[\"params\"]))"
-  js  "GEN.questionWith(id, params, seed)"
+cpp "gen::question_json(gen::question_with(a[\"id\"].asStr(), seed, a[\"params\"]))"
+js  "GEN.questionWith(id, params, seed)"
 
 @method gen.solve {
-  in  id     : string  required
-  in  params : Any     required
-  out Any
+in  id     : string  required
+in  params : Any     required
+out Any
 } pure
-  cpp "gen::solve(a[\"id\"].asStr(), a[\"params\"])"
-  js  "GEN.solve(id, params)"
+cpp "gen::solve(a[\"id\"].asStr(), a[\"params\"])"
+js  "GEN.solve(id, params)"
 
 @method gen.format {
-  in  x : number  required  finite
-  out string
+in  x : number  required  finite
+out string
 } pure
-  cpp "Json(gen::fmt(a[\"x\"].asNum()))"
-  js  "GEN.fmt(x)"
+cpp "Json(gen::fmt(a[\"x\"].asNum()))"
+js  "GEN.fmt(x)"
 
-# ---- QCOS kernel ----------------------------------------------------
+# ---- QCOS kernel: the door, the gate, the pools ----------------------------
 @method qcos.latch {
-  in  key   : Key     required
-  in  value : Any     required
-  out LatchResult
+in  key   : Key     required
+in  value : Any     required
+out LatchResult
 } resident
-  cpp "qcos_api::latch(a)"
+cpp "qcos_api::latch(a)"
 
 @method qcos.exec {
-  in  cir : Any  required
-  out ExecResult
+in  cir : Any  required
+out ExecResult
 } resident
-  cpp "qcos_api::exec(a)"
+cpp "qcos_api::exec(a)"
 
 @method qcos.gate {
-  in  op   : string  required
-  in  args : Any     = {}
-  out Any
+in  op   : string  required
+in  args : Any     = {}
+out Any
 } gate
-  cpp "qcos_api::gate(a)"
+cpp "qcos_api::gate(a)"
 
-
-@method core.methods {
-  out Any
-} pure
-  cpp "/* filled by Registrar */"
-
-- name: Golden QCOS witness (A5)
-        run: |
-          set -o pipefail
-          python3 tools/golden_qcos.py check 2>&1 | tee reports/golden_qcos.log
-
-      - name: Canon lint (one canon, four tongues)
-        run: |
-          set -o pipefail
-          python3 tools/canon_lint.py 2>&1 | tee reports/canon_lint.log
+# Zone 0 as its own gate method (A7): three vectors, fail-closed verdict.
+@method qcos.zone0 {
+in  intent : Any  required
+out Zone0Verdict
+} gate
+cpp "qcos_api::zone0(a)"
 
 @method qcos.boot {
-  out Any
+out Any
 } pure
-  cpp "/* qcos_reg */"
+cpp "/* qcos_reg */"
 
 @method qcos.read {
-  in  key : Key required
-  out Any
+in  key : Key required
+out ReadResult
 } resident
+cpp "qcos_api::read(a)"
 
 @method qcos.snapshot {
-  out Any
+out Any
 } resident
+cpp "qcos_api::snapshot(a)"
 
+# A9 ring reader: the core testifies about its own transitions.
 @method qcos.provenance {
-  out Any
+out Any
 } resident
+cpp "qcos_api::provenance(a)"
 
+# A8 pool occupancy report (audit without introspection).
+@method qcos.caps {
+out CapReport
+} resident
+cpp "qcos_api::caps(a)"
+
+# xv6 claim/complete lifecycle (PLIC precedent): a dispatched call is never
+# recalled; it ends by reply, cancellation, deadline, or provider loss.
+@method qcos.claim {
+in  id : uint32  required
+out ReadResult
+} resident
+cpp "qcos_api::claim(a)"
+
+@method qcos.complete {
+in  id     : uint32  required
+in  status : int32   required
+out LatchResult
+} resident
+cpp "qcos_api::complete(a)"
+
+# ---- the spine: SIR -> DIR -> CIR, lowered deterministically ---------------
 @method qcos.lower {
-  in  want  : string required
-  in  key   : Key = ""
-  in  value : Any = {}
-  in  target: string = "cpp"
-  out Any
+in  want  : string required
+in  key   : Key = ""
+in  value : Any = {}
+in  target: string = "cpp"
+out Any
 } pure
+cpp "qcos_api::lower(a)"
 
 @method qcos.cost {
-  in  cir : Any required
-  out Any
+in  cir : Any required
+out Any
 } pure
+cpp "qcos_api::cost(a)"
+
+# DIR fabric: populations over LINE | GRID | GRAPH with active masks.
+@method qcos.shape {
+in  topo : string  required
+in  n    : uint32  required
+out Any
+} resident
+cpp "qcos_api::shape(a)"
+
+# ---- roster / bank (truth in hand core until step 11 absorbs gen::) --------
+@method core.methods {
+out Any
+} pure
+cpp "/* filled by Registrar */"
 
 @method gen.topics { out Any } pure
 @method gen.templates { out Any } pure
+
 @method gen.demoBank {
-  in  seed : Seed = 11
-  in  y0   : int32 = 0
-  in  y1   : int32 = 0
-  out Any
+in  seed : Seed = 11
+in  y0   : int32 = 0
+in  y1   : int32 = 0
+out Any
 } pure
+
 @method gen.vectors { out Any } pure
+
 @method gen.hash32 {
-  in  s : string required
-  out number
+in  s : string required
+out number
 } pure
+
 @method gen.makeBatch {
-  in  items : Any required
-  out Any
+in  items : Any required
+out Any
 } pure
