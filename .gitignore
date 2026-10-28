@@ -1,34 +1,35 @@
 # python
-.venv/
 __pycache__/
 *.py[cod]
+.venv/
+venv/
+.mypy_cache/
 .pytest_cache/
 
-# core build artifacts
+# build & media artifacts (never truth)
 build/
-core/build/
-
-# pipeline artifacts (CI produces these; never source)
 media/
-output_shorts/
 temp_audio/
 temp_jobs/
-*.part.mp4
-.render_cache.json
+output_shorts/
+bench_out/
+reports/
+*.mp4
+*.wav
+!saem_voice_sample.wav
+qa_frame_*.jpg
 
-# logs: keep the ledgers, drop the noise
-logs/reports/
-logs/*.log
+# runtime state: the ledger lives here but is environment-local
+logs/
 
-# PRIVATE: never commit voice, secrets, tokens
-saem_voice_sample.wav
-voice/
-secrets/
-.env
-tokens/
+# quarantine keeps only its manifest in git
+grown/*
+!grown/.gitkeep
+!grown/PROMOTED.md
 
-# os / editor
+# node / os junk
+node_modules/
 .DS_Store
-Thumbs.db
 
-# tracked on purpose: knowledge/cases.tsv, grown/, tests/golden/, logs/*.jsonl
+# knowledge stores that are runtime caches, not canon
+knowledge/cases.jsonl.bak
