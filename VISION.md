@@ -442,6 +442,7 @@ around it.
   after studying an external handoff pattern; STATUS holds volatile state
   only, law stays single-sourced. Reason: sessions end mid-step; re-orientation
   cost must be zero and state must never be trusted from a stale table.
+- 2026-10-29 · v2.2 · Added COMPILER.md (QUC synthesis); Phase G steps C1–C9 join §21 after step 14; harness cc/file-IO recorded as dev-tooling exemption. 
 
 Sealed. vision.md + README.md + os.md + qcos.cxn form the constitution of
 this project. Code that contradicts them is a bug, however convenient.
