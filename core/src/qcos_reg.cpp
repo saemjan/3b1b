@@ -14,10 +14,9 @@
 #include <string>
 
 namespace saem {
+namespace qcos {
 
 // ---- Helper functions ----
-
-namespace {
 
 Json error_obj(const std::string& msg) {
   Json o = Json::object();
@@ -26,7 +25,7 @@ Json error_obj(const std::string& msg) {
   return o;
 }
 
-Json verdict_obj(const qcos::Verdict& v) {
+Json verdict_obj(const Verdict& v) {
   Json o = Json::object();
   o.set("ok", v.ok);
   o.set("reasons", v.reasons);
@@ -89,7 +88,7 @@ struct ExecResult {
   Json trace;
 };
 
-ExecResult exec_cir(qcos::Working& w, const Json& cir) {
+ExecResult exec_cir(Working& w, const Json& cir) {
   ExecResult er;
   er.ok = true;
   er.trace = Json::object();
@@ -97,78 +96,87 @@ ExecResult exec_cir(qcos::Working& w, const Json& cir) {
   return er;
 }
 
-}  // anonymous namespace
+}  // namespace qcos
+}  // namespace saem
 
 // ---- Process-local session state ----
 // The caller's ledger remains the persistent truth.
 
-qcos::Working g_working;
-qcos::Provenance g_prov;
-qcos::Episodic g_episodic;
+namespace saem {
+namespace qcos {
+
+Working g_working;
+Provenance g_prov;
+Episodic g_episodic;
+
+}  // namespace qcos
+}  // namespace saem
 
 // ---- Registrars ----
 
-const Registrar qcos_boot_reg("qcos.boot", [](const Json&) {
+namespace saem {
+
+const Registrar qcos_boot_reg("qcos.boot", saem::Handler{[](const Json&) -> Json {
   Json self = qcos::self_test();
   Json o = Json::object();
   o.set("ok", self["ok"]);
   o.set("self", self);
-  o.set("constitution", constitution_json());
+  o.set("constitution", qcos::constitution_json());
   return o;
-});
+}});
 
-const Registrar qcos_gate_reg("qcos.gate", [](const Json& a) {
+const Registrar qcos_gate_reg("qcos.gate", saem::Handler{[](const Json& a) -> Json {
   const std::string op = a["op"].asStr();
   const Json args = a.has("args") ? a["args"] : Json::object();
   qcos::Verdict v = qcos::gate(op, args);
-  return verdict_obj(v);
-});
+  return qcos::verdict_obj(v);
+}});
 
-const Registrar qcos_latch_reg("qcos.latch", [](const Json& a) {
+const Registrar qcos_latch_reg("qcos.latch", saem::Handler{[](const Json& a) -> Json {
   if (!a.has("key") || !a.has("value")) {
-    return error_obj("qcos.latch: missing key or value");
+    return qcos::error_obj("qcos.latch: missing key or value");
   }
   qcos::Verdict v = qcos::gate("latch", a);
   if (!v.ok) {
-    return verdict_obj(v);
+    return qcos::verdict_obj(v);
   }
   const std::string key = a["key"].asStr();
   const Json value = a["value"];
-  if (!g_working.latch(key, value)) {
-    return error_obj("qcos.latch: working memory full or key out of bounds");
+  if (!qcos::g_working.latch(key, value)) {
+    return qcos::error_obj("qcos.latch: working memory full or key out of bounds");
   }
   const std::string hash = sha256_hex(canon(value));
-  g_prov.append("latch", key, "qcos.latch");
+  qcos::g_prov.append("latch", key, "qcos.latch");
   Json o = Json::object();
   o.set("ok", true);
   o.set("key", Json(key));
   o.set("hash", Json(hash));
   return o;
-});
+}});
 
-const Registrar qcos_read_reg("qcos.read", [](const Json& a) {
+const Registrar qcos_read_reg("qcos.read", saem::Handler{[](const Json& a) -> Json {
   if (!a.has("key")) {
-    return error_obj("qcos.read: missing key");
+    return qcos::error_obj("qcos.read: missing key");
   }
   const std::string key = a["key"].asStr();
-  const Json value = g_working.read(key);
+  const Json value = qcos::g_working.read(key);
   Json o = Json::object();
   o.set("ok", true);
   o.set("key", Json(key));
   o.set("value", value);
   return o;
-});
+}});
 
-const Registrar qcos_lower_reg("qcos.lower", [](const Json& a) {
+const Registrar qcos_lower_reg("qcos.lower", saem::Handler{[](const Json& a) -> Json {
   qcos::Verdict v = qcos::gate("lower", a);
   if (!v.ok) {
-    return verdict_obj(v);
+    return qcos::verdict_obj(v);
   }
-  const Json sir = lower_sir(a);
-  const Json dir = lower_dir(sir);
-  const Json cir = lower_cir(sir, dir);
+  const Json sir = qcos::lower_sir(a);
+  const Json dir = qcos::lower_dir(sir);
+  const Json cir = qcos::lower_cir(sir, dir);
   const std::string target = a.has("target") ? a["target"].asStr() : "cpp";
-  const Json mir = lower_mir(cir, target);
+  const Json mir = qcos::lower_mir(cir, target);
   Json o = Json::object();
   o.set("ok", true);
   o.set("sir", sir);
@@ -176,18 +184,18 @@ const Registrar qcos_lower_reg("qcos.lower", [](const Json& a) {
   o.set("cir", cir);
   o.set("mir", mir);
   return o;
-});
+}});
 
-const Registrar qcos_exec_reg("qcos.exec", [](const Json& a) {
+const Registrar qcos_exec_reg("qcos.exec", saem::Handler{[](const Json& a) -> Json {
   if (!a.has("cir")) {
-    return error_obj("qcos.exec: missing cir");
+    return qcos::error_obj("qcos.exec: missing cir");
   }
   qcos::Verdict v = qcos::gate("exec", a);
   if (!v.ok) {
-    return verdict_obj(v);
+    return qcos::verdict_obj(v);
   }
   const Json cir = a["cir"];
-  ExecResult er = exec_cir(g_working, cir);
+  qcos::ExecResult er = qcos::exec_cir(qcos::g_working, cir);
   Json o = Json::object();
   o.set("ok", er.ok);
   o.set("trace", er.trace);
@@ -196,32 +204,32 @@ const Registrar qcos_exec_reg("qcos.exec", [](const Json& a) {
     return o;
   }
   const std::string hash = sha256_hex(canon(er.trace));
-  g_prov.append("exec", "cir", "qcos.exec");
+  qcos::g_prov.append("exec", "cir", "qcos.exec");
   o.set("hash", Json(hash));
   return o;
-});
+}});
 
-const Registrar qcos_snapshot_reg("qcos.snapshot", [](const Json&) {
+const Registrar qcos_snapshot_reg("qcos.snapshot", saem::Handler{[](const Json&) -> Json {
   Json o = Json::object();
   o.set("ok", true);
-  o.set("working", g_working.snapshot());
-  o.set("prov", g_prov.log);
-  o.set("prev", Json(g_prov.prev));
-  o.set("tick", g_prov.tick);
+  o.set("working", qcos::g_working.snapshot());
+  o.set("prov", qcos::g_prov.log);
+  o.set("prev", Json(qcos::g_prov.prev));
+  o.set("tick", qcos::g_prov.tick);
   return o;
-});
+}});
 
-const Registrar qcos_restore_reg("qcos.restore", [](const Json& a) {
+const Registrar qcos_restore_reg("qcos.restore", saem::Handler{[](const Json& a) -> Json {
   if (!a.has("snapshot")) {
-    return error_obj("qcos.restore: missing snapshot");
+    return qcos::error_obj("qcos.restore: missing snapshot");
   }
   qcos::Verdict v = qcos::gate("restore", a);
   if (!v.ok) {
-    return verdict_obj(v);
+    return qcos::verdict_obj(v);
   }
-  const bool ok = g_working.restore(a["snapshot"]);
+  const bool ok = qcos::g_working.restore(a["snapshot"]);
   if (ok) {
-    g_prov.append("restore", "l1", "qcos.restore");
+    qcos::g_prov.append("restore", "l1", "qcos.restore");
   }
   Json o = Json::object();
   o.set("ok", ok);
@@ -229,40 +237,40 @@ const Registrar qcos_restore_reg("qcos.restore", [](const Json& a) {
     o.set("error", Json("restore failed"));
   }
   return o;
-});
+}});
 
-const Registrar qcos_episode_reg("qcos.episode", [](const Json& a) {
+const Registrar qcos_episode_reg("qcos.episode", saem::Handler{[](const Json& a) -> Json {
   qcos::Verdict v = qcos::gate("episode", a);
   if (!v.ok) {
-    return verdict_obj(v);
+    return qcos::verdict_obj(v);
   }
   if (a.has("event")) {
-    g_episodic.push(a["event"]);
+    qcos::g_episodic.push(a["event"]);
   }
   int n = a.has("n") ? a["n"].asInt(8) : 8;
   if (n < 0) n = 0;
   Json o = Json::object();
   o.set("ok", true);
-  o.set("recent", g_episodic.recent(n));
+  o.set("recent", qcos::g_episodic.recent(n));
   return o;
-});
+}});
 
-const Registrar qcos_provenance_reg("qcos.provenance", [](const Json&) {
+const Registrar qcos_provenance_reg("qcos.provenance", saem::Handler{[](const Json&) -> Json {
   Json o = Json::object();
   o.set("ok", true);
-  o.set("verify", g_prov.verify());
-  o.set("log", g_prov.log);
-  o.set("prev", Json(g_prov.prev));
-  o.set("tick", g_prov.tick);
+  o.set("verify", qcos::g_prov.verify());
+  o.set("log", qcos::g_prov.log);
+  o.set("prev", Json(qcos::g_prov.prev));
+  o.set("tick", qcos::g_prov.tick);
   return o;
-});
+}});
 
-const Registrar qcos_cost_reg("qcos.cost", [](const Json&) {
+const Registrar qcos_cost_reg("qcos.cost", saem::Handler{[](const Json&) -> Json {
   Json o = Json::object();
   o.set("ok", true);
   o.set("debt_bits", 0.0);
   o.set("unit", Json("kT ln 2"));
   return o;
-});
+}});
 
 }  // namespace saem
