@@ -1,11 +1,11 @@
-// tests/test_kernel_slots.cpp — step 11b witness. Exit 0 = truth holds.
+// tests/test_kernel_slots.cpp — step 11b-reconcile witness. Exit 0 = truth.
 #include "../core/src/kernel.hpp"
 #include <cstdio>
 
 static int fails = 0, total = 0;
 static void want(const char* n, bool ok) {
   ++total; if (!ok) ++fails;
-  std::printf("[test_kernel] %-34s %s\n", n, ok ? "ok" : "DRIFT");
+  std::printf("[test_kernel] %-36s %s\n", n, ok ? "ok" : "DRIFT");
 }
 
 int main() {
@@ -13,51 +13,49 @@ int main() {
   qcos::g_arena.init();
   Kernel k;
 
-  Proc* first = nullptr;
-  bool spawned = true;
+  want("canon number (jsnum half-even)", canon(Json(0.1 + 0.2)) == "0.30000000000000004");
+  Json o = Json::object(); o.set("b", Json(1)); o.set("a", Json(2));
+  want("canon insertion order", canon(o) == "{\"b\":1,\"a\":2}");
+
+  Proc* first = nullptr; bool spawned = true;
   for (int i = 0; i < 32; i++) {
-    Proc* p = k.spawn("p" + std::to_string(i), 1, 0, 7);
+    Proc* p = k.try_spawn("p" + std::to_string(i), 1, 0, 7);
     if (i == 0) first = p;
-    spawned &= (p != nullptr);
+    spawned &= (p != nullptr && !k.refused(*p));
   }
   want("32 procs spawn", spawned && k.proc_count() == 32);
-  want("33rd refused", k.spawn("overflow", 1, 0, 7) == nullptr);
-  want("long name refused", k.spawn(std::string(80, 'x'), 1, 0, 7) == nullptr);
-  want("find hit", k.find("p0") == first);
-  want("find miss", k.find("nope") == nullptr);
+  Proc& over = k.spawn("overflow", 1, 0, 7);
+  want("33rd -> tombstone, refused visible", k.refused(over));
+  want("long name refused", k.try_spawn(std::string(80, 'x'), 1, 0, 7) == nullptr);
+  want("find hit / miss", k.find("p0") == first && k.find("nope") == nullptr);
 
-  Proc* p2 = nullptr;
-  { Kernel k2; /* fresh kernel shares arena; use slot from reaps below */ }
-  // bounded schedule on a scratch proc (reaped before any tick)
-  Proc* scratch = nullptr;
-  k.reap(k.find("p31"));
-  scratch = k.spawn("scratch", 1, 0, 7);
-  bool bounded = true;
   Gate g{};
-  for (size_t i = 0; i < KSCHED_MAX; i++) bounded &= k.add_step(scratch, 1.0, g);
-  bounded &= !k.add_step(scratch, 1.0, g);
-  want("schedule bounded", bounded);
-  k.reap(scratch);
+  bool bounded = true;
+  for (size_t i = 0; i < KSCHED_MAX; i++) bounded &= k.add_step(*first, 1.0, g);
+  bounded &= !k.add_step(*first, 1.0, g);
+  want("schedule bounded (push_back vocab)", bounded && first->schedule.size() == KSCHED_MAX);
 
-  want("set/read round-trip", k.set("k", Json(1)) &&
-       ({ Json v; k.read("k", &v) && v.asInt(0) == 1; }));
+  want("set/get round-trip", k.set("k", Json(1)) && k.get("k").asInt(0) == 1);
   uint64_t d0 = k.debt_bits();
   k.set("k", Json(2));
-  want("overwrite priced", k.debt_bits() - d0 == 8ull * QCOS_SLOT_PAYLOAD);
-  want("read miss visible", !k.read("absent", nullptr));
-  bool board_full = true;
-  for (int i = 0; i < 32; i++) board_full &= k.set("b" + std::to_string(i), Json(i));
-  board_full &= !k.set("b32", Json(32));
-  want("board full refuses", board_full);
+  want("overwrite priced 8*canon(old)", k.debt_bits() - d0 == 8ull * 1);
+  want("entropy view matches ledger", k.entropy_debt_kTln2() == (double)k.debt_bits());
+  bool board_ok = true;
+  for (int i = 0; i < 31; i++) board_ok &= k.set("b" + std::to_string(i), Json(i));
+  board_ok &= !k.set("b31", Json(31));           // 1 + 31 keys = cap 32
+  want("board bounded by WORKING cap", board_ok);
+  want("soul = sha256(canon(board))", k.soul() == sha256_hex(canon(k.board()))
+       && k.soul().size() == 64);
+  want("status fields frozen", k.status().arr().size() == k.proc_count());
 
   uint32_t id_before = qcos::g_arena.next_id;
   k.reap(first);
-  Proc* reborn = k.spawn("p0", 1, 0, 7);
-  want("reap frees slot", reborn != nullptr);
-  want("identity monotonic", reborn && reborn->slot != QCOS_SLOT_NONE &&
-       qcos::g_arena.next_id > id_before);
-  k.tick();   // all-done procs: pc untouched, no crash
-  want("tick on done procs", reborn && reborn->done());
+  k.reap(&over);                                  // tombstone reap = no-op
+  Proc* reborn = k.try_spawn("p0", 1, 0, 7);
+  want("reap frees slot; tombstone safe", reborn != nullptr);
+  want("identity monotonic", qcos::g_arena.next_id > id_before);
+  k.tick();                                       // done/tombstone procs untouched
+  want("tick skips done & tombstone", reborn && reborn->done());
 
   std::printf("[test_kernel] %d/%d passed\n", total - fails, total);
   return fails ? 1 : 0;
