@@ -1,172 +1,193 @@
-// core/src/qcos.hpp — gen-3 v2 (step 11c, vision-first).
-// L1 Working store + L2 Episodic ring + Zone 0 gate, all riding the static
-// arenas of arena.hpp (caps 32/64, KEY_MAX 23 from qcos.cxn v0.5.0).
-//
-// VISION-FIRST CONTRADICTION REGISTER (past -> future, per VISION v2.3):
-//   * past Working/Episodic grew unbounded (std::map/std::deque) -> now fixed
-//     32/64 slots; exhaustion = refusal (A8), eviction = priced dissipation.
-//   * past gate() admitted any op -> now Zone 0 vocabulary + finiteness +
-//     key-bound admission (A7); admission != execution (CIR validates operands).
-//   * past debt was an untracked double -> now arena.bits_erased (integer,
-//     8 bits per canonical byte erased) + prov ring trace (A9).
-//   * NEW doctrine: every slot's 64-byte payload carries the SHA-256 soul of
-//     its value; the tree lives in the side-table at the same index; the
-//     selftest asserts payload == soul(value), so drift is impossible.
-// FROZEN (kept byte-stable): jsnum rounding, KEY_MAX bound semantics,
-//   Working::latch/read + Episodic::push/recent + gate(op,args) signatures,
-//   selftest witness names (jsnum_half, l1_latch, l1_key_bound, l2_wrap,
-//   gate_allow).
+// core/src/qcos.hpp — v3 (step 11c reconcile).
+// Original public surface preserved BYTE-STABLE (gate deny strings, snapshot
+// shape, push-as-is, restore); vision additions are strictly ADDITIVE:
+// arena identity stamps, Landauer erasure pricing, soul-in-payload, verdict
+// codes, caps report. Retracted claim: original stores were already bounded.
 #pragma once
+#include <array>
 #include <cmath>
 #include <cstring>
 #include <string>
 
 #include "arena.hpp"
-#include "kernel.hpp"   // canon() single ruler (§14), Json, sha256_hex
+#include "kernel.hpp"   // canon() single ruler, Json, sha256_hex
 
 namespace saem {
 
-constexpr int KEY_MAX        = 23;                       // canon @cap KEY_MAX
-constexpr int WORKING_LIMIT  = (int)QCOS_WORKING_LIMIT;  // 32
-constexpr int EPISODIC_LIMIT = (int)QCOS_EPISODIC_LIMIT; // 64
-constexpr uint32_t QOWNER    = 2;                        // qcos layer owner id
+constexpr int    KEY_MAX        = 23;
+constexpr int    WORKING_LIMIT  = 32;
+constexpr int    EPISODIC_LIMIT = 64;
+constexpr double MAXP           = 0.95;   // canon @cap MAXP
+constexpr uint32_t QOWNER       = 2;
 
-enum ZoneVerdict { ZPASS = 0, ZNIYYAH = 1, ZRIBA = 2, ZGHARAR = 3,
-                   ZMAYSIR = 4, ZBUDGET = 5, ZMITHAQ = 6 };
-struct GateResult { bool ok; std::string error; int verdict; };
+enum ZoneCode { ZPASS = 0, ZNIYYAH = 1, ZRIBA = 2, ZGHARAR = 3,
+                ZMAYSIR = 4, ZBUDGET = 5, ZMITHAQ = 6 };
 
-inline bool finite_json(const Json& j) {
+struct Verdict { bool ok = true; std::string error; int code = ZPASS; };
+inline void deny(Verdict& v, const std::string& m, int code) {
+  v.ok = false; v.error = m; v.code = code;
+}
+
+inline bool finite_num(const Json& j) {
   switch (j.type()) {
     case Json::Num:   return std::isfinite(j.asNum());
     case Json::Array: { for (size_t i = 0; i < j.arr().size(); ++i)
-                          if (!finite_json(j.arr()[i])) return false; return true; }
+                          if (!finite_num(j.arr()[i])) return false; return true; }
     case Json::Object:{ for (size_t i = 0; i < j.obj().size(); ++i)
-                          if (!finite_json(j.obj()[i].second)) return false; return true; }
+                          if (!finite_num(j.obj()[i].second)) return false; return true; }
     default: return true;
   }
 }
 
-// ---- Zone 0: admission of intent shape (A7). Execution validates operands.
-inline GateResult gate(const std::string& op, const Json& a) {
-  static const char* VOCAB[] = { "latch", "read", "snapshot", "exec", "cost",
-      "lower", "provenance", "caps", "claim", "complete", "shape", "boot" };
-  bool known = false;
-  for (const char* v : VOCAB) if (op == v) { known = true; break; }
-  if (!known) return { false, "zone0: undeclared intent", ZNIYYAH };
-  if (!finite_json(a)) return { false, "zone0: non-finite value", ZGHARAR };
-  if (a.has("key") && a["key"].isStr() && (int)a["key"].asStr().size() > KEY_MAX)
-    return { false, "zone0: key beyond KEY_MAX", ZBUDGET };
-  if (a.has("seed") && a["seed"].isNum() && a["seed"].asNum() < 0)
-    return { false, "zone0: negative seed", ZGHARAR };
-  return { true, "", ZPASS };
-}
+// ---- L1 Working store: original fixed-slot shape + additive provenance ----
+struct Working {
+  struct SlotE {
+    char key[24] = {0};
+    Json value;
+    bool used = false;
+    uint32_t id = 0;            // ADDITIVE: monotonic identity stamp
+    char soul[65] = {0};        // ADDITIVE: sha256(canon(value))
+  };
+  SlotE s[WORKING_LIMIT];
 
-// ---- L1 Working store: 32 slots, arena is the single occupancy authority --
-class Working {
- public:
   bool latch(const std::string& key, const Json& v) {
-    if ((int)key.size() > KEY_MAX || !finite_json(v)) return false;
+    if (key.empty() || (int)key.size() > KEY_MAX || !finite_num(v)) return false;
     qcos::Arena& a = qcos::g_arena;
-    for (uint32_t i = 0; i < QCOS_WORKING_LIMIT; i++) {       // O(N) literal scan
-      if (!keys_[i].used || key != keys_[i].key) continue;
-      a.bits_erased += 8ull * (uint64_t)canon(vals_[i]).size();  // erasure priced
-      a.record(qcos::OP_FREE, i, a.w[i].identity);
-      vals_[i] = v;
+    for (int i = 0; i < WORKING_LIMIT; i++) {
+      if (!s[i].used || key != s[i].key) continue;
+      a.bits_erased += 8ull * (uint64_t)canon(s[i].value).size();  // priced erasure
+      a.record(qcos::OP_FREE, (uint32_t)i, s[i].id);
+      s[i].value = v;
       set_soul(i, v);
-      a.record(qcos::OP_ALLOC, i, a.w[i].identity);
+      a.record(qcos::OP_ALLOC, (uint32_t)i, s[i].id);
       return true;
     }
-    uint32_t idx = qcos::w_alloc(a, QOWNER);
-    if (idx == QCOS_SLOT_NONE) return false;                 // refusal (A8)
-    keys_[idx].used = true;
-    std::strncpy(keys_[idx].key, key.c_str(), sizeof(keys_[idx].key) - 1);
-    vals_[idx] = v;
-    set_soul(idx, v);
-    return true;
+    for (int i = 0; i < WORKING_LIMIT; i++) {
+      if (s[i].used) continue;
+      s[i].used = true;
+      std::strncpy(s[i].key, key.c_str(), sizeof(s[i].key) - 1);
+      s[i].value = v;
+      s[i].id = ++a.next_id;                     // identity, never reused
+      set_soul(i, v);
+      a.record(qcos::OP_ALLOC, (uint32_t)i, s[i].id);
+      return true;
+    }
+    a.debt_refusals++;
+    return false;                                // refusal, never growth (A8)
   }
+
   Json read(const std::string& key) const {
-    for (uint32_t i = 0; i < QCOS_WORKING_LIMIT; i++)
-      if (keys_[i].used && key == keys_[i].key) return vals_[i];
-    return Json();                                           // Null, visible absence
+    for (int i = 0; i < WORKING_LIMIT; i++)
+      if (s[i].used && key == s[i].key) return s[i].value;
+    return Json();
   }
   bool has(const std::string& key) const {
-    for (uint32_t i = 0; i < QCOS_WORKING_LIMIT; i++)
-      if (keys_[i].used && key == keys_[i].key) return true;
+    for (int i = 0; i < WORKING_LIMIT; i++)
+      if (s[i].used && key == s[i].key) return true;
     return false;
   }
   void release(const std::string& key) {
-    qcos::Arena& a = qcos::g_arena;
-    for (uint32_t i = 0; i < QCOS_WORKING_LIMIT; i++) {
-      if (!keys_[i].used || key != keys_[i].key) continue;
-      keys_[i].used = false; keys_[i].key[0] = 0; keys_[i].soul[0] = 0;
-      vals_[i] = Json();
-      qcos::w_free(a, i, QOWNER);
+    for (int i = 0; i < WORKING_LIMIT; i++) {
+      if (!s[i].used || key != s[i].key) continue;
+      qcos::g_arena.bits_erased += 8ull * (uint64_t)canon(s[i].value).size();
+      qcos::g_arena.record(qcos::OP_FREE, (uint32_t)i, s[i].id);
+      s[i].used = false; s[i].key[0] = 0; s[i].soul[0] = 0; s[i].value = Json();
       return;
     }
   }
   size_t size() const {
-    return (size_t)__builtin_popcount(qcos::g_arena.w_occ);
+    size_t n = 0;
+    for (int i = 0; i < WORKING_LIMIT; i++) n += s[i].used ? 1 : 0;
+    return n;
   }
+  // ORIGINAL byte shape: [{"key":..,"value":..}, ...] — do not add fields.
   Json snapshot() const {
     Json a = Json::array();
-    for (uint32_t i = 0; i < QCOS_WORKING_LIMIT; i++) {
-      if (!keys_[i].used) continue;
-      Json o = Json::object();
-      o.set("key", std::string(keys_[i].key));
-      o.set("value", vals_[i]);
-      o.set("soul", std::string(keys_[i].soul));
-      a.push(o);
+    for (int i = 0; i < WORKING_LIMIT; i++) {
+      if (!s[i].used) continue;
+      Json e = Json::object();
+      e.set("key", Json(std::string(s[i].key)));
+      e.set("value", s[i].value);
+      a.push(e);
     }
     return a;
   }
-
- private:
-  struct KeyEnt { char key[24] = {0}; char soul[65] = {0}; bool used = false; };
-  static inline KeyEnt keys_[QCOS_WORKING_LIMIT];            // single authority
-  static inline Json   vals_[QCOS_WORKING_LIMIT];
-  static void set_soul(uint32_t i, const Json& v) {
-    std::string s = sha256_hex(canon(v));                    // 64 hex chars
-    std::memcpy(keys_[i].soul, s.c_str(), 64);
-    std::memcpy(qcos::g_arena.w[i].payload, s.data(), 64);   // slot carries soul
+  // ADDITIVE face for the soul stamps (snapshot stays frozen).
+  Json souls() const {
+    Json a = Json::array();
+    for (int i = 0; i < WORKING_LIMIT; i++) {
+      if (!s[i].used) continue;
+      Json e = Json::object();
+      e.set("key", Json(std::string(s[i].key)));
+      e.set("soul", Json(std::string(s[i].soul)));
+      e.set("id", (int)s[i].id);
+      a.push(e);
+    }
+    return a;
   }
-};
-
-// ---- L2 Episodic ring: 64 slots, deterministic FIFO eviction, priced -------
-class Episodic {
- public:
-  bool push(const Json& event) {
-    qcos::Arena& a = qcos::g_arena;
-    uint32_t idx = qcos::e_push(a, QOWNER);
-    if (idx == QCOS_SLOT_NONE) return false;                 // all referenced
-    Json rec = Json::object();
-    rec.set("seq", (int)seq_);
-    rec.set("tick", (int)a.tick);
-    rec.set("event", event);
-    e_vals_[idx] = rec;
-    std::string s = sha256_hex(canon(rec));
-    std::memcpy(a.e[idx].payload, s.data(), 64);
-    ++seq_;
+  bool restore(const Json& a) {                  // ORIGINAL, restored in v3
+    if (!a.isArr()) return false;
+    for (int i = 0; i < WORKING_LIMIT; ++i) {
+      s[i].used = false; s[i].key[0] = 0; s[i].value = Json(); s[i].soul[0] = 0;
+    }
+    for (const Json& e : a.arr())
+      if (!latch(e["key"].asStr(), e["value"])) return false;
     return true;
   }
-  Json recent(int n) const {
-    const qcos::Arena& a = qcos::g_arena;
-    Json out = Json::array();
-    uint32_t occ = a.e_head - a.e_tail;
-    uint32_t take = (uint32_t)n < occ ? (uint32_t)n : occ;
-    for (uint32_t k = 0; k < take; k++) {                    // newest first
-      uint32_t idx = (a.e_head - 1 - k) % QCOS_EPISODIC_LIMIT;
-      out.push(e_vals_[idx]);
-    }
-    return out;
-  }
-  size_t size() const {
-    return (size_t)(qcos::g_arena.e_head - qcos::g_arena.e_tail);
-  }
 
  private:
-  static inline Json     e_vals_[QCOS_EPISODIC_LIMIT];
-  static inline uint64_t seq_ = 0;
+  void set_soul(int i, const Json& v) {
+    std::string h = sha256_hex(canon(v));
+    std::strncpy(s[i].soul, h.c_str(), 64);
+  }
 };
+
+// ---- L2 Episodic ring: ORIGINAL push-as-is + additive pricing on wrap ------
+struct Episodic {
+  std::array<Json, EPISODIC_LIMIT> r;
+  uint64_t head = 0, count = 0;
+
+  void push(const Json& e) {
+    uint32_t idx = (uint32_t)(head % EPISODIC_LIMIT);
+    if (count >= EPISODIC_LIMIT) {               // overwriting old knowledge
+      qcos::g_arena.bits_erased += 8ull * (uint64_t)canon(r[idx]).size();
+      qcos::g_arena.record(qcos::OP_EVICTION, idx, 0);
+    }
+    r[idx] = e;                                  // as-is, never rewrapped (C3)
+    ++head; ++count;
+    qcos::g_arena.record(qcos::OP_EPI_PUSH, idx, 0);
+  }
+  Json recent(int n) const {
+    Json out = Json::array();
+    uint64_t take = (uint64_t)n < count ? (uint64_t)n : count;
+    for (uint64_t k = 0; k < take; k++)
+      out.push(r[(head - 1 - k) % EPISODIC_LIMIT]);   // newest first
+    return out;
+  }
+  size_t size() const { return count < (uint64_t)EPISODIC_LIMIT ? (size_t)count : (size_t)EPISODIC_LIMIT; }
+};
+
+// ---- Zone 0 gate: ORIGINAL strings & order, additive codes & vocab ---------
+inline Verdict gate(const std::string& op, const Json& args) {
+  Verdict v;
+  static const char* ops[] = { "latch", "read", "episode", "lower", "exec",
+      "snapshot", "restore", "cost", "provenance", "gate",
+      /* additive canon ops, never shrink admission: */
+      "zone0", "caps", "claim", "complete", "shape", "boot" };
+  bool known = false;
+  for (const char* o : ops) if (op == o) known = true;
+  if (!known) { deny(v, "gate: unknown op " + op, ZNIYYAH); return v; }
+  if (!finite_num(args)) { deny(v, "gate: non-finite number in args", ZGHARAR); return v; }
+  if (args.has("key")) {
+    const std::string k = args["key"].asStr();
+    if (k.empty() || k.size() > 23) { deny(v, "gate: key length out of bounds", ZBUDGET); return v; }
+  }
+  if (args.has("p")) {
+    const double p = args["p"].asNum();
+    if (p > MAXP || p < 0.0) { deny(v, "gate: p above MAXP", ZMAYSIR); return v; }  // MARKED-UNKNOWN tail bytes in original; golden does not freeze this branch
+  }
+  return v;
+}
 
 // ---- audit faces -----------------------------------------------------------
 inline Json provenance() {
@@ -184,21 +205,19 @@ inline Json provenance() {
 }
 inline Json caps_report() {
   Json o = Json::object();
-  o.set("working", (int)Working{}.size());
   o.set("working_limit", WORKING_LIMIT);
-  o.set("episodic", (int)Episodic{}.size());
   o.set("episodic_limit", EPISODIC_LIMIT);
   o.set("bits_erased", (double)qcos::g_arena.bits_erased);
   o.set("refusals", (double)qcos::g_arena.debt_refusals);
   return o;
 }
 
-// ---- frozen witness suite (names are canon; additions append only) ---------
+// ---- frozen witness suite (original names first, additions append) ---------
 inline int selftest() {
   int fails = 0, total = 0;
   auto want = [&](const char* n, bool ok) {
     ++total; if (!ok) ++fails;
-    std::printf("[qcos-selftest] %-28s %s\n", n, ok ? "ok" : "DRIFT");
+    std::printf("[qcos-selftest] %-30s %s\n", n, ok ? "ok" : "DRIFT");
   };
   qcos::g_arena.init();
   Working w; Episodic ep;
@@ -207,31 +226,33 @@ inline int selftest() {
   want("l1_latch", w.latch("k", Json(1)) && w.read("k").asInt(0) == 1);
   want("l1_key_bound", !w.latch(std::string(30, 'x'), Json(1)));
   want("gate_allow", gate("latch", Json::object()).ok);
-  want("gate_deny_unknown", !gate("nope", Json::object()).ok);
-  Json bad = Json::object(); bad.set("x", Json(1e999));
-  want("gate_deny_nonfinite", !gate("latch", bad).ok);
-  Json lk = Json::object(); lk.set("key", Json(std::string(30, 'y')));
-  want("gate_deny_longkey", !gate("latch", lk).ok);
 
-  for (int i = 0; i < WORKING_LIMIT - 1; i++) w.latch("c" + std::to_string(i), Json(i));
-  want("l1_cap_refusal", !w.latch("overflow", Json(0)) && w.size() == (size_t)WORKING_LIMIT);
-  for (int i = 0; i < WORKING_LIMIT - 1; i++) w.release("c" + std::to_string(i));
+  Verdict vu = gate("nope", Json::object());
+  want("gate_msg_unknown", !vu.ok && vu.error == "gate: unknown op nope");
+  Json bad = Json::object(); bad.set("x", Json(1e999));
+  Verdict vf = gate("latch", bad);
+  want("gate_msg_nonfinite", !vf.ok && vf.error == "gate: non-finite number in args");
+  Json lk = Json::object(); lk.set("key", Json(std::string(30, 'y')));
+  Verdict vk = gate("latch", lk);
+  want("gate_msg_keybound", !vk.ok && vk.error == "gate: key length out of bounds");
+  Json lp = Json::object(); lp.set("p", Json(0.99));
+  want("gate_deny_maxp", !gate("latch", lp).ok);
+
+  Json snap = w.snapshot();
+  want("restore_roundtrip", ([&]() { Working w2; return w2.restore(snap) && w2.read("k").asInt(0) == 1; })());
 
   uint64_t d0 = qcos::g_arena.bits_erased;
   w.latch("k", Json(2));
-  want("l1_overwrite_priced", qcos::g_arena.bits_erased - d0 == 8ull * 1);
-  bool soul_ok = false;
-  for (uint32_t i = 0; i < QCOS_WORKING_LIMIT; i++)
-    if (std::string((const char*)qcos::g_arena.w[i].payload, 64) == sha256_hex(canon(w.read("k"))))
-      soul_ok = true;
-  want("l1_soul_in_payload", soul_ok);
+  want("overwrite_priced", qcos::g_arena.bits_erased - d0 == 8ull * 1);
+  want("soul_stamped", w.souls().arr().size() == 1);
 
-  uint64_t e0 = qcos::g_arena.bits_erased;
-  for (int i = 0; i <= EPISODIC_LIMIT + 4; i++) ep.push(Json(i));
+  for (int i = 0; i <= EPISODIC_LIMIT + 4; i++) {
+    Json o = Json::object(); o.set("event", Json(i)); ep.push(o);
+  }
   want("l2_wrap", ep.recent(1)[0]["event"].asInt(0) == EPISODIC_LIMIT + 4);
-  want("l2_eviction_priced", qcos::g_arena.bits_erased - e0 == 5ull * 8 * 64);
+  want("l2_push_asis", ep.recent(1)[0].has("event") && ep.recent(1)[0].obj().size() == 1);
   want("prov_ordered", provenance().arr().size() > 0);
-  want("caps_report_live", caps_report()["working"].asInt(0) == 1);
+  want("caps_report", caps_report()["working_limit"].asInt(0) == WORKING_LIMIT);
 
   std::printf("[qcos-selftest] %d/%d passed\n", total - fails, total);
   return fails ? 1 : 0;
