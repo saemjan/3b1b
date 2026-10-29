@@ -1,32 +1,21 @@
-// core/src/kernel.hpp — gen-3 v2 (step 11b reconcile).
-// Quantum process kernel on static arenas, preserving the FULL original
-// public surface so no call site breaks.
+// core/src/kernel.hpp — Fresh upgrade (2026-10-30)
+// Zero-heap quantum process kernel with static arenas.
+// Doctrine: xv6 proc[] fixed pool, arena.hpp four-axis slots,
+// Landauer integer pricing (8 bits per canonical byte erased).
 //
-// COMPAT REGISTER (original -> v2):
-//   canon(Json)               kept verbatim (A1 ruler; jsnum via numfmt.hpp)
-//   Proc{name,prog,schedule,pc,done,halted}
-//                             name: std::string -> char[64]; schedule:
-//                             std::vector<pair> -> fixed Schedule with the
-//                             SAME push_back/emplace_back/size/operator[]
-//                             vocabulary; new field: slot (identity axis)
-//   Kernel::spawn             keeps Proc& signature; on pool exhaustion it
-//                             returns the shared tombstone Proc
-//                             (slot == QCOS_SLOT_NONE); test k.refused(p).
-//                             Refusal is visible, never silent (A8).
-//   Kernel::find/tick         unchanged semantics; tick skips tombstone/done
-//   Kernel::set               void -> bool (callers ignoring result still
-//                             compile); debt pricing restored to original
-//                             physics: 8 bits per canonical byte of the OLD
-//                             value, now integer (A4)
-//   Kernel::get/board/        restored verbatim
-//     entropy_debt_kTln2/     entropy_debt_kTln2 is a double VIEW over the
-//     soul/status             integer ledger (representation edge only)
-//   NEW: try_spawn, add_step, reap, refused, debt_bits, proc_count;
-//        board bounded to QCOS_WORKING_LIMIT keys (A8 cap)
-// ASSUMPTIONS REGISTER: qreg.hpp provides QProg(nreg,k,seed), hop, split,
-//   prob_halt, default-constructible Gate; cog.hpp transitively provides
-//   Json + jsnum + sha256_hex (as in the original).
+// API CONTRACT (frozen):
+//   Proc{name, prog, schedule, pc}
+//   Kernel::spawn/find/add_step/tick/set/get/board/entropy_debt_kTln2/soul/status/reap
+//   canon(Json) — the single A1 ruler for JSON canonicalization
+//
+// CHANGES from original:
+//   * std::string name -> char name[64] (KCOS_NAME_MAX)
+//   * std::vector<pair> schedule -> Schedule struct with fixed array + same vocabulary
+//   * debt_bits_ double -> uint64_t bits_erased (integer Landauer, A4)
+//   * arena.hpp integration: every Proc gets a working-arena slot (identity axis)
+//   * Exhaustion = refusal (QCOS_SLOT_NONE), never growth (A8)
 #pragma once
+
 #include <cstdint>
 #include <cstring>
 #include <new>
@@ -34,18 +23,18 @@
 #include <utility>
 
 #include "arena.hpp"
-#include "cog.hpp"
-#include "qreg.hpp"
-#include "sha256.hpp"
+#include "cog.hpp"      // Json, jsnum
+#include "qreg.hpp"     // QProg, Gate
+#include "sha256.hpp"   // sha256_hex
 
 namespace saem {
 
-constexpr size_t   KCOS_NAME_MAX  = 64;      // mirrors canon NAME_MAX cap
+constexpr size_t   KCOS_NAME_MAX  = 64;      // mirrors canon @cap NAME_MAX
 constexpr size_t   KSCHED_MAX     = 64;      // fixed schedule horizon per proc
 constexpr uint64_t KDEFAULT_SEED  = 0x5AEE;  // streamU contract seed
 
-// ---- A1 canonical printer (verbatim doctrine; insertion order preserved) --
-inline std::string canon(const Json & j) {
+// ---- A1 canonical printer (insertion order preserved, exact jsnum) ----
+inline std::string canon(const Json& j) {
   switch (j.type()) {
     case Json::Null: return "null";
     case Json::Bool: return j.asBool() ? "true" : "false";
@@ -57,20 +46,24 @@ inline std::string canon(const Json & j) {
         else if (c == '\n') out += "\\n";
         else if (c == '\t') out += "\\t";
         else if (c == '\r') out += "\\r";
-        else if (c < 0x20) { char b[8]; std::snprintf(b, sizeof b, "\\u%04x", c); out += b; }
-        else out += static_cast<char>(c);
+        else if (c < 0x20) {
+          char b[8]; std::snprintf(b, sizeof b, "\\u%04x", c); out += b;
+        } else out += static_cast<char>(c);
       }
       out += '"'; return out;
     }
     case Json::Array: {
       std::string s = "[";
-      const Json::Arr & a = j.arr();
-      for (size_t i = 0; i < a.size(); ++i) { if (i) s += ","; s += canon(a[i]); }
+      const Json::Arr& a = j.arr();
+      for (size_t i = 0; i < a.size(); ++i) {
+        if (i) s += ",";
+        s += canon(a[i]);
+      }
       return s + "]";
     }
     case Json::Object: {
       std::string s = "{";
-      const Json::Obj & o = j.obj();
+      const Json::Obj& o = j.obj();
       for (size_t i = 0; i < o.size(); ++i) {
         if (i) s += ",";
         std::string k; k += '"';
@@ -79,8 +72,9 @@ inline std::string canon(const Json & j) {
           else if (c == '\n') k += "\\n";
           else if (c == '\t') k += "\\t";
           else if (c == '\r') k += "\\r";
-          else if (c < 0x20) { char b[8]; std::snprintf(b, sizeof b, "\\u%04x", c); k += b; }
-          else k += static_cast<char>(c);
+          else if (c < 0x20) {
+            char b[8]; std::snprintf(b, sizeof b, "\\u%04x", c); k += b;
+          } else k += static_cast<char>(c);
         }
         k += '"';
         s += k + ":" + canon(o[i].second);
@@ -91,25 +85,38 @@ inline std::string canon(const Json & j) {
   return "null";
 }
 
-// ---- fixed schedule with the original vector<pair> vocabulary -------------
+// ---- Fixed schedule with the original vector<pair> vocabulary ----
 struct ScheduleStep { double first = 0.0; Gate second{}; };
 struct Schedule {
   ScheduleStep step[KSCHED_MAX] = {};
   size_t n = 0;
-  size_t size()  const { return n; }
-  bool   empty() const { return n == 0; }
-  void   clear()       { n = 0; }
-  ScheduleStep&       operator[](size_t i)       { return step[i]; }
+  
+  size_t size() const { return n; }
+  bool empty() const { return n == 0; }
+  void clear() { n = 0; }
+  
+  ScheduleStep& operator[](size_t i) { return step[i]; }
   const ScheduleStep& operator[](size_t i) const { return step[i]; }
+  
   void push_back(const std::pair<double, Gate>& p) {
-    if (n < KSCHED_MAX) { step[n].first = p.first; step[n].second = p.second; ++n; }
+    if (n < KSCHED_MAX) {
+      step[n].first = p.first;
+      step[n].second = p.second;
+      ++n;
+    }
   }
-  void push_back(double prob, const Gate& g) { push_back(std::make_pair(prob, g)); }
-  template <class... A> void emplace_back(A&&... a) {
+  
+  void push_back(double prob, const Gate& g) {
+    push_back(std::make_pair(prob, g));
+  }
+  
+  template <class... A>
+  void emplace_back(A&&... a) {
     push_back(std::pair<double, Gate>(std::forward<A>(a)...));
   }
 };
 
+// ---- Proc: quantum process descriptor ----
 struct Proc {
   uint32_t   slot = QCOS_SLOT_NONE;          // arena identity axis
   char       name[KCOS_NAME_MAX] = {0};
@@ -121,33 +128,41 @@ struct Proc {
       : prog(nreg, k, seed) {
     std::strncpy(name, n.c_str(), KCOS_NAME_MAX - 1);
   }
-  bool   done()   const { return pc >= schedule.size(); }
+  
+  bool done() const { return pc >= schedule.size(); }
   double halted() const { return prog.prob_halt(); }
 };
 
+// ---- Kernel: process manager with static storage ----
 class Kernel {
  public:
-  // Original signature. Exhaustion -> tombstone; check refused(p). (A8)
+  // Original signature preserved: returns Proc& (tombstone on exhaustion)
   Proc& spawn(const std::string& name, size_t nreg, size_t k,
               uint64_t seed = KDEFAULT_SEED) {
     Proc* p = try_spawn(name, nreg, k, seed);
     return p ? *p : tombstone();
   }
+  
+  // Vision-first: returns nullptr on pool exhaustion (A8 refusal)
   Proc* try_spawn(const std::string& name, size_t nreg, size_t k,
                   uint64_t seed = KDEFAULT_SEED) {
     if (name.size() >= KCOS_NAME_MAX) return nullptr;
+    
     uint32_t slot = qcos::w_alloc(qcos::g_arena, KOWNER);
     if (slot == QCOS_SLOT_NONE) return nullptr;
+    
     for (PSlot& s : procs_) {
       if (s.used) continue;
-      s.used = true; s.slot = slot;
+      s.used = true;
+      s.slot = slot;
       Proc* p = new (s.raw) Proc(name, nreg, k, seed);
       p->slot = slot;
       return p;
     }
-    qcos::w_free(qcos::g_arena, slot, KOWNER);   // symmetric unwind
+    qcos::w_free(qcos::g_arena, slot, KOWNER);  // symmetric unwind
     return nullptr;
   }
+  
   bool refused(const Proc& p) const { return p.slot == QCOS_SLOT_NONE; }
 
   Proc* find(const std::string& name) {
@@ -175,8 +190,7 @@ class Kernel {
     qcos::tick_advance(qcos::g_arena);
   }
 
-  // Overwrite = erasure of the old value's information: 8 bits per canonical
-  // byte (original physics), integer ledger (A4). Board bounded by A8 cap.
+  // Board: key-value store with Landauer pricing (8 bits per canonical byte erased)
   bool set(const std::string& key, const Json& v) {
     if (board_.has(key)) {
       debt_bits_ += 8ull * static_cast<uint64_t>(canon(board_[key]).size());
@@ -184,15 +198,17 @@ class Kernel {
       return true;
     }
     const Json& b = board_;
-    if (b.obj().size() >= QCOS_WORKING_LIMIT) return false;   // refusal
+    if (b.obj().size() >= QCOS_WORKING_LIMIT) return false;  // refusal (A8)
     board_.set(key, v);
     return true;
   }
+  
   Json get(const std::string& key) const { return board_[key]; }
   const Json& board() const { return board_; }
 
   uint64_t debt_bits() const { return debt_bits_; }
-  double   entropy_debt_kTln2() const { return static_cast<double>(debt_bits_); }
+  double entropy_debt_kTln2() const { return static_cast<double>(debt_bits_); }
+  
   std::string soul() const { return sha256_hex(canon(board_)); }
 
   Json status() const {
@@ -210,7 +226,7 @@ class Kernel {
     return a;
   }
 
-  // Two-phase reap (ZOMBIE discipline); tombstone reap is a no-op.
+  // Two-phase reap (ZOMBIE discipline): destruct, then free the arena slot
   void reap(Proc* p) {
     if (!p || refused(*p)) return;
     for (PSlot& s : procs_)
@@ -222,6 +238,7 @@ class Kernel {
         return;
       }
   }
+  
   uint32_t proc_count() const {
     uint32_t n = 0;
     for (const PSlot& s : procs_) n += s.used ? 1 : 0;
@@ -230,16 +247,21 @@ class Kernel {
 
  private:
   static constexpr uint32_t KOWNER = 1;
+  
   struct PSlot {
     alignas(alignof(Proc)) unsigned char raw[sizeof(Proc)];
     bool     used = false;
     uint32_t slot = QCOS_SLOT_NONE;
   };
+  
   static Proc* P(PSlot& s) { return reinterpret_cast<Proc*>(s.raw); }
-  static Proc& tombstone() {           // immutable, never ticked, never reaped
+  static const Proc* P(const PSlot& s) { return reinterpret_cast<const Proc*>(s.raw); }
+  
+  static Proc& tombstone() {
     static Proc t(std::string("[refused]"), 0, 0, 0);
     return t;
   }
+  
   PSlot    procs_[QCOS_WORKING_LIMIT];
   Json     board_ = Json::object();
   uint64_t debt_bits_ = 0;
