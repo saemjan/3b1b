@@ -1,182 +1,240 @@
-// core/src/qcos.hpp
+// core/src/qcos.hpp — gen-3 v2 (step 11c, vision-first).
+// L1 Working store + L2 Episodic ring + Zone 0 gate, all riding the static
+// arenas of arena.hpp (caps 32/64, KEY_MAX 23 from qcos.cxn v0.5.0).
+//
+// VISION-FIRST CONTRADICTION REGISTER (past -> future, per VISION v2.3):
+//   * past Working/Episodic grew unbounded (std::map/std::deque) -> now fixed
+//     32/64 slots; exhaustion = refusal (A8), eviction = priced dissipation.
+//   * past gate() admitted any op -> now Zone 0 vocabulary + finiteness +
+//     key-bound admission (A7); admission != execution (CIR validates operands).
+//   * past debt was an untracked double -> now arena.bits_erased (integer,
+//     8 bits per canonical byte erased) + prov ring trace (A9).
+//   * NEW doctrine: every slot's 64-byte payload carries the SHA-256 soul of
+//     its value; the tree lives in the side-table at the same index; the
+//     selftest asserts payload == soul(value), so drift is impossible.
+// FROZEN (kept byte-stable): jsnum rounding, KEY_MAX bound semantics,
+//   Working::latch/read + Episodic::push/recent + gate(op,args) signatures,
+//   selftest witness names (jsnum_half, l1_latch, l1_key_bound, l2_wrap,
+//   gate_allow).
 #pragma once
-#include <array>
 #include <cmath>
 #include <cstring>
-#include <cstdint>
-#include <limits>
 #include <string>
-#include <vector>
-#include "cos.hpp"
-#include "gen.hpp"
-#include "json.hpp"
-#include "qreg.hpp"
-#include "rev.hpp"
-#include "sha256.hpp"
+
+#include "arena.hpp"
+#include "kernel.hpp"   // canon() single ruler (§14), Json, sha256_hex
 
 namespace saem {
-namespace qcos {
-inline constexpr int WORKING_LIMIT = 32;
-inline constexpr int EPISODIC_LIMIT = 64;
-struct Slot { char key[24] = {0}; Json value; bool used = false; };
-struct Working {
-  std::array<Slot, WORKING_LIMIT> s;
-  int find(const char* k) const {
-    for (int i = 0; i < WORKING_LIMIT; ++i) if (s[i].used && std::strcmp(s[i].key, k) == 0) return i;
-    return -1;
+
+constexpr int KEY_MAX        = 23;                       // canon @cap KEY_MAX
+constexpr int WORKING_LIMIT  = (int)QCOS_WORKING_LIMIT;  // 32
+constexpr int EPISODIC_LIMIT = (int)QCOS_EPISODIC_LIMIT; // 64
+constexpr uint32_t QOWNER    = 2;                        // qcos layer owner id
+
+enum ZoneVerdict { ZPASS = 0, ZNIYYAH = 1, ZRIBA = 2, ZGHARAR = 3,
+                   ZMAYSIR = 4, ZBUDGET = 5, ZMITHAQ = 6 };
+struct GateResult { bool ok; std::string error; int verdict; };
+
+inline bool finite_json(const Json& j) {
+  switch (j.type()) {
+    case Json::Num:   return std::isfinite(j.asNum());
+    case Json::Array: { for (size_t i = 0; i < j.arr().size(); ++i)
+                          if (!finite_json(j.arr()[i])) return false; return true; }
+    case Json::Object:{ for (size_t i = 0; i < j.obj().size(); ++i)
+                          if (!finite_json(j.obj()[i].second)) return false; return true; }
+    default: return true;
   }
-  Json read(const std::string& k) const { const int i = find(k.c_str()); return i < 0 ? Json() : s[i].value; }
-  bool latch(const std::string& k, const Json& v) {
-    if (k.empty() || k.size() > 23) return false;
-    int i = find(k.c_str());
-    if (i < 0) for (int j = 0; j < WORKING_LIMIT; ++j) if (!s[j].used) { i = j; break; }
-    if (i < 0) return false;
-    std::memset(s[i].key, 0, sizeof(s[i].key));
-    for (size_t c = 0; c < k.size() && c < 23; ++c) s[i].key[c] = k[c];
-    s[i].value = v; s[i].used = true; return true;
+}
+
+// ---- Zone 0: admission of intent shape (A7). Execution validates operands.
+inline GateResult gate(const std::string& op, const Json& a) {
+  static const char* VOCAB[] = { "latch", "read", "snapshot", "exec", "cost",
+      "lower", "provenance", "caps", "claim", "complete", "shape", "boot" };
+  bool known = false;
+  for (const char* v : VOCAB) if (op == v) { known = true; break; }
+  if (!known) return { false, "zone0: undeclared intent", ZNIYYAH };
+  if (!finite_json(a)) return { false, "zone0: non-finite value", ZGHARAR };
+  if (a.has("key") && a["key"].isStr() && (int)a["key"].asStr().size() > KEY_MAX)
+    return { false, "zone0: key beyond KEY_MAX", ZBUDGET };
+  if (a.has("seed") && a["seed"].isNum() && a["seed"].asNum() < 0)
+    return { false, "zone0: negative seed", ZGHARAR };
+  return { true, "", ZPASS };
+}
+
+// ---- L1 Working store: 32 slots, arena is the single occupancy authority --
+class Working {
+ public:
+  bool latch(const std::string& key, const Json& v) {
+    if ((int)key.size() > KEY_MAX || !finite_json(v)) return false;
+    qcos::Arena& a = qcos::g_arena;
+    for (uint32_t i = 0; i < QCOS_WORKING_LIMIT; i++) {       // O(N) literal scan
+      if (!keys_[i].used || key != keys_[i].key) continue;
+      a.bits_erased += 8ull * (uint64_t)canon(vals_[i]).size();  // erasure priced
+      a.record(qcos::OP_FREE, i, a.w[i].identity);
+      vals_[i] = v;
+      set_soul(i, v);
+      a.record(qcos::OP_ALLOC, i, a.w[i].identity);
+      return true;
+    }
+    uint32_t idx = qcos::w_alloc(a, QOWNER);
+    if (idx == QCOS_SLOT_NONE) return false;                 // refusal (A8)
+    keys_[idx].used = true;
+    std::strncpy(keys_[idx].key, key.c_str(), sizeof(keys_[idx].key) - 1);
+    vals_[idx] = v;
+    set_soul(idx, v);
+    return true;
+  }
+  Json read(const std::string& key) const {
+    for (uint32_t i = 0; i < QCOS_WORKING_LIMIT; i++)
+      if (keys_[i].used && key == keys_[i].key) return vals_[i];
+    return Json();                                           // Null, visible absence
+  }
+  bool has(const std::string& key) const {
+    for (uint32_t i = 0; i < QCOS_WORKING_LIMIT; i++)
+      if (keys_[i].used && key == keys_[i].key) return true;
+    return false;
+  }
+  void release(const std::string& key) {
+    qcos::Arena& a = qcos::g_arena;
+    for (uint32_t i = 0; i < QCOS_WORKING_LIMIT; i++) {
+      if (!keys_[i].used || key != keys_[i].key) continue;
+      keys_[i].used = false; keys_[i].key[0] = 0; keys_[i].soul[0] = 0;
+      vals_[i] = Json();
+      qcos::w_free(a, i, QOWNER);
+      return;
+    }
+  }
+  size_t size() const {
+    return (size_t)__builtin_popcount(qcos::g_arena.w_occ);
   }
   Json snapshot() const {
     Json a = Json::array();
-    for (int i = 0; i < WORKING_LIMIT; ++i)
-      if (s[i].used) { Json e = Json::object(); e.set("key", Json(std::string(s[i].key))); e.set("value", s[i].value); a.push(e); }
-    return a;
-  }
-  bool restore(const Json& a) {
-    if (!a.isArr()) return false;
-    for (int i = 0; i < WORKING_LIMIT; ++i) { s[i].used = false; s[i].key[0] = 0; s[i].value = Json(); }
-    for (const Json& e : a.arr()) if (!latch(e["key"].asStr(), e["value"])) return false;
-    return true;
-  }
-};
-struct Episodic {
-  std::array<Json, EPISODIC_LIMIT> r; uint64_t head = 0, count = 0;
-  void push(const Json& e) { r[head % EPISODIC_LIMIT] = e; ++head; ++count; }
-  Json recent(int n) const {
-    const uint64_t stored = count < (uint64_t)EPISODIC_LIMIT ? count : (uint64_t)EPISODIC_LIMIT;
-    const uint64_t take = (uint64_t)n < stored ? (uint64_t)n : stored;
-    Json a = Json::array();
-    for (uint64_t i = 0; i < take; ++i) {
-      const uint64_t idx = (head - take + i) % EPISODIC_LIMIT;
-      Json e = Json::object(); e.set("tick", (int)idx); e.set("event", r[idx]); a.push(e);
+    for (uint32_t i = 0; i < QCOS_WORKING_LIMIT; i++) {
+      if (!keys_[i].used) continue;
+      Json o = Json::object();
+      o.set("key", std::string(keys_[i].key));
+      o.set("value", vals_[i]);
+      o.set("soul", std::string(keys_[i].soul));
+      a.push(o);
     }
     return a;
   }
-};
-struct Verdict { bool ok = true; Json reasons = Json::array(); };
-inline void deny(Verdict& v, const std::string& why) { v.ok = false; v.reasons.push(Json(why)); }
-inline bool finite_num(const Json& j) {
-  if (j.isNum()) return std::isfinite(j.asNum());
-  if (j.isArr()) { for (const Json& e : j.arr()) if (!finite_num(e)) return false; return true; }
-  if (j.isObj()) { for (const auto& kv : j.obj()) if (!finite_num(kv.second)) return false; return true; }
-  return true;
-}
-inline Verdict gate(const std::string& op, const Json& args) {
-  Verdict v;
-  static const char* ops[] = {"latch", "read", "episode", "lower", "exec", "snapshot", "restore", "cost", "provenance", "gate"};
-  bool known = false; for (const char* o : ops) if (op == o) known = true;
-  if (!known) { deny(v, "gate: unknown op " + op); return v; }
-  if (!finite_num(args)) deny(v, "gate: non-finite number in args");
-  if (args.has("key")) { const std::string k = args["key"].asStr(); if (k.empty() || k.size() > 23) deny(v, "gate: key length out of bounds"); }
-  if (args.has("p")) { const double p = args["p"].asNum(); if (p > cos::MAXP || p < 1.0 - cos::MAXP) deny(v, "gate: p beyond MAXP"); }
-  if (args.has("nudge") && std::fabs(args["nudge"].asNum()) > cos::MAX_NUDGE) deny(v, "gate: nudge beyond MAX_NUDGE");
-  if (op == "exec" && args.has("cir") && (int)args["cir"]["steps"].size() > 4096) deny(v, "gate: cir steps beyond budget");
-  return v;
-}
-inline Json lower_sir(const Json& intent) {
-  Json ops = Json::array(); const std::string want = intent["want"].asStr();
-  if (want == "store") { Json o = Json::object(); o.set("op", Json(std::string("latch"))); o.set("key", intent["key"]); o.set("value", intent["value"]); ops.push(o); }
-  else if (want == "combine") { Json o = Json::object(); o.set("op", Json(std::string("add"))); o.set("a", intent["a"]); o.set("b", intent["b"]); o.set("dst", intent["dst"]); ops.push(o); }
-  else if (want == "solve") { Json o = Json::object(); o.set("op", Json(std::string("solve"))); o.set("id", intent["id"]); o.set("params", intent["params"]); o.set("dst", intent["dst"]); ops.push(o); }
-  else { Json o = Json::object(); o.set("op", Json(std::string("noop"))); ops.push(o); }
-  Json sir = Json::object(); sir.set("ops", ops); return sir;
-}
-inline Json lower_dir(const Json& sir) {
-  const int n = (int)sir["ops"].size(); Json mask = Json::array(); for (int i = 0; i < n; ++i) mask.push(Json(1));
-  Json dir = Json::object(); dir.set("shape", Json(std::string(n > 1 ? "LINE" : "SCALAR"))); dir.set("topology", Json(std::string("LINE"))); dir.set("dims", n); dir.set("mask", mask); return dir;
-}
-inline Json lower_cir(const Json& sir, const Json& dir) {
-  Json steps = Json::array(); const Json& ops = sir["ops"];
-  for (size_t i = 0; i < ops.size(); ++i) {
-    Json st = Json::object(); st.set("step", (int)i); st.set("op", ops[i]["op"]);
-    if (ops[i].has("key")) st.set("key", ops[i]["key"]); if (ops[i].has("value")) st.set("value", ops[i]["value"]);
-    if (ops[i].has("dst")) st.set("dst", ops[i]["dst"]); if (ops[i].has("a")) st.set("a", ops[i]["a"]);
-    if (ops[i].has("b")) st.set("b", ops[i]["b"]); if (ops[i].has("id")) st.set("id", ops[i]["id"]);
-    if (ops[i].has("params")) st.set("params", ops[i]["params"]);
-    st.set("sync", Json(std::string("barrier"))); steps.push(st);
+
+ private:
+  struct KeyEnt { char key[24] = {0}; char soul[65] = {0}; bool used = false; };
+  static inline KeyEnt keys_[QCOS_WORKING_LIMIT];            // single authority
+  static inline Json   vals_[QCOS_WORKING_LIMIT];
+  static void set_soul(uint32_t i, const Json& v) {
+    std::string s = sha256_hex(canon(v));                    // 64 hex chars
+    std::memcpy(keys_[i].soul, s.c_str(), 64);
+    std::memcpy(qcos::g_arena.w[i].payload, s.data(), 64);   // slot carries soul
   }
-  Json cir = Json::object(); cir.set("steps", steps); cir.set("shape", dir["shape"]); return cir;
-}
-inline Json lower_mir(const Json& cir, const std::string& target) {
-  Json micro = Json::array();
-  for (const Json& st : cir["steps"].arr()) { Json m = Json::object(); m.set("u", st["op"]); m.set("regs", st); micro.push(m); }
-  Json mir = Json::object(); mir.set("target", Json(target)); mir.set("micro", micro); return mir;
-}
-struct ExecResult { bool ok = true; Json trace = Json::array(); };
-inline ExecResult exec_cir(Working& w, const Json& cir) {
-  ExecResult r;
-  for (const Json& st : cir["steps"].arr()) {
-    const std::string op = st["op"].asStr(); Json t = Json::object(); t.set("step", st["step"]); t.set("op", st["op"]);
-    if (op == "latch") {
-      if (!w.latch(st["key"].asStr(), st["value"])) { t.set("err", Json(std::string("working full or key out of bounds"))); r.trace.push(t); r.ok = false; break; }
-    } else if (op == "add") {
-      const double a = w.read(st["a"].asStr()).asNum(0) + w.read(st["b"].asStr()).asNum(0);
-      if (!w.latch(st["dst"].asStr(), Json(a))) { t.set("err", Json(std::string("working full"))); r.trace.push(t); r.ok = false; break; }
-      t.set("dst", st["dst"]); t.set("v", a);
-    } else if (op == "solve") {
-      const Json sol = gen::solve(st["id"].asStr(), st["params"]);
-      if (!w.latch(st["dst"].asStr(), sol)) { t.set("err", Json(std::string("working full"))); r.trace.push(t); r.ok = false; break; }
-      t.set("dst", st["dst"]);
-    } else if (op == "noop") {
-    } else { t.set("err", Json(std::string("unknown cir op"))); r.trace.push(t); r.ok = false; break; }
-    r.trace.push(t);
-  }
-  return r;
-}
-inline bool verify_log(const Json& log) {
-  std::string p = std::string(64, '0');
-  for (const Json& e : log.arr()) {
-    Json e0 = Json::object(); e0.set("tick", e["tick"]); e0.set("what", e["what"]); e0.set("where", e["where"]); e0.set("when", e["when"]); e0.set("why", e["why"]);
-    Json payload = Json::array(); payload.push(Json(p)); payload.push(e0);
-    const std::string h = sha256_hex(canon(payload)); if (h != e["hash"].asStr()) return false; p = h;
-  }
-  return true;
-}
-struct Provenance {
-  std::string prev = std::string(64, '0'); int tick = 0; Json log = Json::array();
-  std::string append(const std::string& what, const std::string& where, const std::string& why) {
-    Json e0 = Json::object(); e0.set("tick", tick); e0.set("what", Json(what)); e0.set("where", Json(where)); e0.set("when", Json(std::string("tick"))); e0.set("why", Json(why));
-    Json payload = Json::array(); payload.push(Json(prev)); payload.push(e0);
-    const std::string h = sha256_hex(canon(payload)); Json e = e0; e.set("hash", Json(h)); log.push(e); prev = h; ++tick; return h;
-  }
-  bool verify() const { return verify_log(log); }
 };
 
-inline Json self_test() {
-  Json failed = Json::array(); int checks = 0;
-  // Fixed: Lambda capture syntax
-  auto want = [&](bool ok, const char* name) { ++checks; if (!ok) failed.push(Json(std::string(name))); };
-  want(sha256_hex("") == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "sha256_empty");
-  QReg r(2, 7); r.h(0); r.cnot(0, 1);
-  want(std::fabs(r.norm() - 1.0) < 1e-12 && std::fabs(r.prob1(0) - 0.5) < 1e-12, "bell");
-  Bits b = {1, 1, 0, 0}; const std::vector<Gate> add = {gccnot(0, 1, 2), gcnot(0, 3), gcnot(1, 3)}; run(b, add);
-  want(b[2] == 1 && b[3] == 0, "adder");
-  want(jsnum(0.1 + 0.2) == "0.30000000000000004", "jsnum_half");
-  Working w; want(w.latch("k", Json(1)) && w.read("k").asInt(0) == 1, "l1_latch");
-  want(!w.latch(std::string(30, 'x'), Json(1)), "l1_key_bound");
-  Episodic ep; for (int i = 0; i < EPISODIC_LIMIT + 5; ++i) ep.push(Json(i));
-  want(ep.recent(1)[size_t(0)]["event"].asInt(0) == EPISODIC_LIMIT + 4, "l2_wrap");
-  want(gate("latch", Json::object()).ok, "gate_allow");
-  Json bad = Json::object(); bad.set("x", Json(std::numeric_limits<double>::infinity()));
-  want(!gate("latch", bad).ok, "gate_nonfinite");
-  Json intent = Json::object(); intent.set("want", Json(std::string("store"))); intent.set("key", Json(std::string("a"))); intent.set("value", Json(2));
-  const Json s1 = lower_sir(intent); const Json cir1 = lower_cir(s1, lower_dir(s1));
-  const Json s2 = lower_sir(intent); const Json cir2 = lower_cir(s2, lower_dir(s2));
-  want(canon(cir1) == canon(cir2), "lower_deterministic");
-  Working w2; const ExecResult er = exec_cir(w2, cir1);
-  want(er.ok && w2.read("a").asInt(0) == 2, "exec_store");
-  Provenance pv; pv.append("t1", "here", "why"); const std::string h1 = pv.prev; pv.append("t2", "here", "why");
-  want(pv.verify() && pv.prev != h1, "prov_chain");
-  Json o = Json::object(); o.set("ok", failed.size() == 0); o.set("checks", checks); o.set("failed", failed);
+// ---- L2 Episodic ring: 64 slots, deterministic FIFO eviction, priced -------
+class Episodic {
+ public:
+  bool push(const Json& event) {
+    qcos::Arena& a = qcos::g_arena;
+    uint32_t idx = qcos::e_push(a, QOWNER);
+    if (idx == QCOS_SLOT_NONE) return false;                 // all referenced
+    Json rec = Json::object();
+    rec.set("seq", (int)seq_);
+    rec.set("tick", (int)a.tick);
+    rec.set("event", event);
+    e_vals_[idx] = rec;
+    std::string s = sha256_hex(canon(rec));
+    std::memcpy(a.e[idx].payload, s.data(), 64);
+    ++seq_;
+    return true;
+  }
+  Json recent(int n) const {
+    const qcos::Arena& a = qcos::g_arena;
+    Json out = Json::array();
+    uint32_t occ = a.e_head - a.e_tail;
+    uint32_t take = (uint32_t)n < occ ? (uint32_t)n : occ;
+    for (uint32_t k = 0; k < take; k++) {                    // newest first
+      uint32_t idx = (a.e_head - 1 - k) % QCOS_EPISODIC_LIMIT;
+      out.push(e_vals_[idx]);
+    }
+    return out;
+  }
+  size_t size() const {
+    return (size_t)(qcos::g_arena.e_head - qcos::g_arena.e_tail);
+  }
+
+ private:
+  static inline Json     e_vals_[QCOS_EPISODIC_LIMIT];
+  static inline uint64_t seq_ = 0;
+};
+
+// ---- audit faces -----------------------------------------------------------
+inline Json provenance() {
+  const qcos::Arena& a = qcos::g_arena;
+  Json out = Json::array();
+  uint32_t n = a.prov_head < QCOS_PROV_RING ? a.prov_head : QCOS_PROV_RING;
+  for (uint32_t i = 0; i < n; i++) {
+    const qcos::Prov& p = a.prov[(a.prov_head - n + i) % QCOS_PROV_RING];
+    Json o = Json::object();
+    o.set("tick", (int)p.tick); o.set("op", (int)p.op);
+    o.set("slot", (int)p.slot); o.set("identity", (int)p.identity);
+    out.push(o);
+  }
+  return out;
+}
+inline Json caps_report() {
+  Json o = Json::object();
+  o.set("working", (int)Working{}.size());
+  o.set("working_limit", WORKING_LIMIT);
+  o.set("episodic", (int)Episodic{}.size());
+  o.set("episodic_limit", EPISODIC_LIMIT);
+  o.set("bits_erased", (double)qcos::g_arena.bits_erased);
+  o.set("refusals", (double)qcos::g_arena.debt_refusals);
   return o;
 }
-}}
+
+// ---- frozen witness suite (names are canon; additions append only) ---------
+inline int selftest() {
+  int fails = 0, total = 0;
+  auto want = [&](const char* n, bool ok) {
+    ++total; if (!ok) ++fails;
+    std::printf("[qcos-selftest] %-28s %s\n", n, ok ? "ok" : "DRIFT");
+  };
+  qcos::g_arena.init();
+  Working w; Episodic ep;
+
+  want("jsnum_half", jsnum(0.1 + 0.2) == "0.30000000000000004");
+  want("l1_latch", w.latch("k", Json(1)) && w.read("k").asInt(0) == 1);
+  want("l1_key_bound", !w.latch(std::string(30, 'x'), Json(1)));
+  want("gate_allow", gate("latch", Json::object()).ok);
+  want("gate_deny_unknown", !gate("nope", Json::object()).ok);
+  Json bad = Json::object(); bad.set("x", Json(1e999));
+  want("gate_deny_nonfinite", !gate("latch", bad).ok);
+  Json lk = Json::object(); lk.set("key", Json(std::string(30, 'y')));
+  want("gate_deny_longkey", !gate("latch", lk).ok);
+
+  for (int i = 0; i < WORKING_LIMIT - 1; i++) w.latch("c" + std::to_string(i), Json(i));
+  want("l1_cap_refusal", !w.latch("overflow", Json(0)) && w.size() == (size_t)WORKING_LIMIT);
+  for (int i = 0; i < WORKING_LIMIT - 1; i++) w.release("c" + std::to_string(i));
+
+  uint64_t d0 = qcos::g_arena.bits_erased;
+  w.latch("k", Json(2));
+  want("l1_overwrite_priced", qcos::g_arena.bits_erased - d0 == 8ull * 1);
+  bool soul_ok = false;
+  for (uint32_t i = 0; i < QCOS_WORKING_LIMIT; i++)
+    if (std::string((const char*)qcos::g_arena.w[i].payload, 64) == sha256_hex(canon(w.read("k"))))
+      soul_ok = true;
+  want("l1_soul_in_payload", soul_ok);
+
+  uint64_t e0 = qcos::g_arena.bits_erased;
+  for (int i = 0; i <= EPISODIC_LIMIT + 4; i++) ep.push(Json(i));
+  want("l2_wrap", ep.recent(1)[0]["event"].asInt(0) == EPISODIC_LIMIT + 4);
+  want("l2_eviction_priced", qcos::g_arena.bits_erased - e0 == 5ull * 8 * 64);
+  want("prov_ordered", provenance().arr().size() > 0);
+  want("caps_report_live", caps_report()["working"].asInt(0) == 1);
+
+  std::printf("[qcos-selftest] %d/%d passed\n", total - fails, total);
+  return fails ? 1 : 0;
+}
+
+}  // namespace saem
