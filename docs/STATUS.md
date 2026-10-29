@@ -46,6 +46,7 @@ User: run `python3 tools/where.py` to confirm compass state; paste step 1's
 output if it exists locally).
 Assistant: witness step 1; deliver the four JS ruler files with --selftest;
 close step 2; update this file and the ledger.
+Phase G queued after step 14; COMPILER.md landed v1. 
 
 ## Resume commands
 python3 tools/where.py
