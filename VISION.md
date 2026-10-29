@@ -442,7 +442,8 @@ around it.
   after studying an external handoff pattern; STATUS holds volatile state
   only, law stays single-sourced. Reason: sessions end mid-step; re-orientation
   cost must be zero and state must never be trusted from a stale table.
-- 2026-10-29 · v2.2 · Added COMPILER.md (QUC synthesis); Phase G steps C1–C9 join §21 after step 14; harness cc/file-IO recorded as dev-tooling exemption. 
+- 2026-10-29 · v2.2 · Added COMPILER.md (QUC synthesis); Phase G steps C1–C9 join §21 after step 14; harness cc/file-IO. recorded as dev-tooling exemption. 
+- 2026-10-30 · v2.4 · Governance ratified. Vision-first on WHAT (every file upgrades toward the sealed vision, even where legacy contradicts); green-at-commit on WHEN (no pushed commit may be red — the witness ladder is our conscience); shims are debt with a named removal step (a shim without one is a lie). Truth-frozen surfaces (golden bytes, parity bytes, selftest names) are never broken, ever.
 
 Sealed. vision.md + README.md + os.md + qcos.cxn form the constitution of
 this project. Code that contradicts them is a bug, however convenient.
