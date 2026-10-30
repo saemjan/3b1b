@@ -1,0 +1,19 @@
+{
+  "build_id": "saem-test-build-1",
+  "articles": [
+    {"id": 1, "title": "Truth over comfort",
+     "text": "Say what is true. Say \"I do not know\" when it is not known.\nTabs\tand a backslash \\ and a question mark ? are text."},
+    {"id": 2, "title": "अनुच्छेद 2", "text": "नमस्ते क्‍ष ज्‌ञ"},
+    {"id": 3, "title": "", "text": ""},
+    {"id": 4, "title": "مادہ", "text": "می‌خواهم 😀 😀 end"},
+    {"id": 65535, "title": "max", "text": "last"}
+  ],
+  "methods": [
+    {"id": 0,   "name": "core.info",    "flags": [],       "max_len": 0},
+    {"id": 1,   "name": "forecast.run", "flags": ["json"], "max_len": 4096},
+    {"id": 2,   "name": "mcq.answer",   "flags": ["json"], "max_len": 1024},
+    {"id": 3,   "name": "text.tokens",  "flags": [],       "max_len": 2000},
+    {"id": 10,  "name": "gen.solve",    "flags": ["json"], "max_len": 0},
+    {"id": 255, "name": "last.method",  "flags": [],       "max_len": 4294967295}
+  ]
+}

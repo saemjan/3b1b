@@ -1,0 +1,325 @@
+{"name": "make K1 seed 1", "method": "gen.make", "args": {"id": "K1", "seed": 1}}
+{"name": "make K1 seed 2", "method": "gen.make", "args": {"id": "K1", "seed": 2}}
+{"name": "make K1 seed 3", "method": "gen.make", "args": {"id": "K1", "seed": 3}}
+{"name": "make K1 seed 7", "method": "gen.make", "args": {"id": "K1", "seed": 7}}
+{"name": "make K1 seed 11", "method": "gen.make", "args": {"id": "K1", "seed": 11}}
+{"name": "make K1 seed 42", "method": "gen.make", "args": {"id": "K1", "seed": 42}}
+{"name": "make K1 seed 123456", "method": "gen.make", "args": {"id": "K1", "seed": 123456}}
+{"name": "make K1 seed 4000000000", "method": "gen.make", "args": {"id": "K1", "seed": 4000000000}}
+{"name": "make K2 seed 1", "method": "gen.make", "args": {"id": "K2", "seed": 1}}
+{"name": "make K2 seed 2", "method": "gen.make", "args": {"id": "K2", "seed": 2}}
+{"name": "make K2 seed 3", "method": "gen.make", "args": {"id": "K2", "seed": 3}}
+{"name": "make K2 seed 7", "method": "gen.make", "args": {"id": "K2", "seed": 7}}
+{"name": "make K2 seed 11", "method": "gen.make", "args": {"id": "K2", "seed": 11}}
+{"name": "make K2 seed 42", "method": "gen.make", "args": {"id": "K2", "seed": 42}}
+{"name": "make K2 seed 123456", "method": "gen.make", "args": {"id": "K2", "seed": 123456}}
+{"name": "make K2 seed 4000000000", "method": "gen.make", "args": {"id": "K2", "seed": 4000000000}}
+{"name": "make K3 seed 1", "method": "gen.make", "args": {"id": "K3", "seed": 1}}
+{"name": "make K3 seed 2", "method": "gen.make", "args": {"id": "K3", "seed": 2}}
+{"name": "make K3 seed 3", "method": "gen.make", "args": {"id": "K3", "seed": 3}}
+{"name": "make K3 seed 7", "method": "gen.make", "args": {"id": "K3", "seed": 7}}
+{"name": "make K3 seed 11", "method": "gen.make", "args": {"id": "K3", "seed": 11}}
+{"name": "make K3 seed 42", "method": "gen.make", "args": {"id": "K3", "seed": 42}}
+{"name": "make K3 seed 123456", "method": "gen.make", "args": {"id": "K3", "seed": 123456}}
+{"name": "make K3 seed 4000000000", "method": "gen.make", "args": {"id": "K3", "seed": 4000000000}}
+{"name": "make L1 seed 1", "method": "gen.make", "args": {"id": "L1", "seed": 1}}
+{"name": "make L1 seed 2", "method": "gen.make", "args": {"id": "L1", "seed": 2}}
+{"name": "make L1 seed 3", "method": "gen.make", "args": {"id": "L1", "seed": 3}}
+{"name": "make L1 seed 7", "method": "gen.make", "args": {"id": "L1", "seed": 7}}
+{"name": "make L1 seed 11", "method": "gen.make", "args": {"id": "L1", "seed": 11}}
+{"name": "make L1 seed 42", "method": "gen.make", "args": {"id": "L1", "seed": 42}}
+{"name": "make L1 seed 123456", "method": "gen.make", "args": {"id": "L1", "seed": 123456}}
+{"name": "make L1 seed 4000000000", "method": "gen.make", "args": {"id": "L1", "seed": 4000000000}}
+{"name": "make L2 seed 1", "method": "gen.make", "args": {"id": "L2", "seed": 1}}
+{"name": "make L2 seed 2", "method": "gen.make", "args": {"id": "L2", "seed": 2}}
+{"name": "make L2 seed 3", "method": "gen.make", "args": {"id": "L2", "seed": 3}}
+{"name": "make L2 seed 7", "method": "gen.make", "args": {"id": "L2", "seed": 7}}
+{"name": "make L2 seed 11", "method": "gen.make", "args": {"id": "L2", "seed": 11}}
+{"name": "make L2 seed 42", "method": "gen.make", "args": {"id": "L2", "seed": 42}}
+{"name": "make L2 seed 123456", "method": "gen.make", "args": {"id": "L2", "seed": 123456}}
+{"name": "make L2 seed 4000000000", "method": "gen.make", "args": {"id": "L2", "seed": 4000000000}}
+{"name": "make L3 seed 1", "method": "gen.make", "args": {"id": "L3", "seed": 1}}
+{"name": "make L3 seed 2", "method": "gen.make", "args": {"id": "L3", "seed": 2}}
+{"name": "make L3 seed 3", "method": "gen.make", "args": {"id": "L3", "seed": 3}}
+{"name": "make L3 seed 7", "method": "gen.make", "args": {"id": "L3", "seed": 7}}
+{"name": "make L3 seed 11", "method": "gen.make", "args": {"id": "L3", "seed": 11}}
+{"name": "make L3 seed 42", "method": "gen.make", "args": {"id": "L3", "seed": 42}}
+{"name": "make L3 seed 123456", "method": "gen.make", "args": {"id": "L3", "seed": 123456}}
+{"name": "make L3 seed 4000000000", "method": "gen.make", "args": {"id": "L3", "seed": 4000000000}}
+{"name": "make W1 seed 1", "method": "gen.make", "args": {"id": "W1", "seed": 1}}
+{"name": "make W1 seed 2", "method": "gen.make", "args": {"id": "W1", "seed": 2}}
+{"name": "make W1 seed 3", "method": "gen.make", "args": {"id": "W1", "seed": 3}}
+{"name": "make W1 seed 7", "method": "gen.make", "args": {"id": "W1", "seed": 7}}
+{"name": "make W1 seed 11", "method": "gen.make", "args": {"id": "W1", "seed": 11}}
+{"name": "make W1 seed 42", "method": "gen.make", "args": {"id": "W1", "seed": 42}}
+{"name": "make W1 seed 123456", "method": "gen.make", "args": {"id": "W1", "seed": 123456}}
+{"name": "make W1 seed 4000000000", "method": "gen.make", "args": {"id": "W1", "seed": 4000000000}}
+{"name": "make W2 seed 1", "method": "gen.make", "args": {"id": "W2", "seed": 1}}
+{"name": "make W2 seed 2", "method": "gen.make", "args": {"id": "W2", "seed": 2}}
+{"name": "make W2 seed 3", "method": "gen.make", "args": {"id": "W2", "seed": 3}}
+{"name": "make W2 seed 7", "method": "gen.make", "args": {"id": "W2", "seed": 7}}
+{"name": "make W2 seed 11", "method": "gen.make", "args": {"id": "W2", "seed": 11}}
+{"name": "make W2 seed 42", "method": "gen.make", "args": {"id": "W2", "seed": 42}}
+{"name": "make W2 seed 123456", "method": "gen.make", "args": {"id": "W2", "seed": 123456}}
+{"name": "make W2 seed 4000000000", "method": "gen.make", "args": {"id": "W2", "seed": 4000000000}}
+{"name": "make W3 seed 1", "method": "gen.make", "args": {"id": "W3", "seed": 1}}
+{"name": "make W3 seed 2", "method": "gen.make", "args": {"id": "W3", "seed": 2}}
+{"name": "make W3 seed 3", "method": "gen.make", "args": {"id": "W3", "seed": 3}}
+{"name": "make W3 seed 7", "method": "gen.make", "args": {"id": "W3", "seed": 7}}
+{"name": "make W3 seed 11", "method": "gen.make", "args": {"id": "W3", "seed": 11}}
+{"name": "make W3 seed 42", "method": "gen.make", "args": {"id": "W3", "seed": 42}}
+{"name": "make W3 seed 123456", "method": "gen.make", "args": {"id": "W3", "seed": 123456}}
+{"name": "make W3 seed 4000000000", "method": "gen.make", "args": {"id": "W3", "seed": 4000000000}}
+{"name": "make R1 seed 1", "method": "gen.make", "args": {"id": "R1", "seed": 1}}
+{"name": "make R1 seed 2", "method": "gen.make", "args": {"id": "R1", "seed": 2}}
+{"name": "make R1 seed 3", "method": "gen.make", "args": {"id": "R1", "seed": 3}}
+{"name": "make R1 seed 7", "method": "gen.make", "args": {"id": "R1", "seed": 7}}
+{"name": "make R1 seed 11", "method": "gen.make", "args": {"id": "R1", "seed": 11}}
+{"name": "make R1 seed 42", "method": "gen.make", "args": {"id": "R1", "seed": 42}}
+{"name": "make R1 seed 123456", "method": "gen.make", "args": {"id": "R1", "seed": 123456}}
+{"name": "make R1 seed 4000000000", "method": "gen.make", "args": {"id": "R1", "seed": 4000000000}}
+{"name": "make R2 seed 1", "method": "gen.make", "args": {"id": "R2", "seed": 1}}
+{"name": "make R2 seed 2", "method": "gen.make", "args": {"id": "R2", "seed": 2}}
+{"name": "make R2 seed 3", "method": "gen.make", "args": {"id": "R2", "seed": 3}}
+{"name": "make R2 seed 7", "method": "gen.make", "args": {"id": "R2", "seed": 7}}
+{"name": "make R2 seed 11", "method": "gen.make", "args": {"id": "R2", "seed": 11}}
+{"name": "make R2 seed 42", "method": "gen.make", "args": {"id": "R2", "seed": 42}}
+{"name": "make R2 seed 123456", "method": "gen.make", "args": {"id": "R2", "seed": 123456}}
+{"name": "make R2 seed 4000000000", "method": "gen.make", "args": {"id": "R2", "seed": 4000000000}}
+{"name": "make R3 seed 1", "method": "gen.make", "args": {"id": "R3", "seed": 1}}
+{"name": "make R3 seed 2", "method": "gen.make", "args": {"id": "R3", "seed": 2}}
+{"name": "make R3 seed 3", "method": "gen.make", "args": {"id": "R3", "seed": 3}}
+{"name": "make R3 seed 7", "method": "gen.make", "args": {"id": "R3", "seed": 7}}
+{"name": "make R3 seed 11", "method": "gen.make", "args": {"id": "R3", "seed": 11}}
+{"name": "make R3 seed 42", "method": "gen.make", "args": {"id": "R3", "seed": 42}}
+{"name": "make R3 seed 123456", "method": "gen.make", "args": {"id": "R3", "seed": 123456}}
+{"name": "make R3 seed 4000000000", "method": "gen.make", "args": {"id": "R3", "seed": 4000000000}}
+{"name": "make G1 seed 1", "method": "gen.make", "args": {"id": "G1", "seed": 1}}
+{"name": "make G1 seed 2", "method": "gen.make", "args": {"id": "G1", "seed": 2}}
+{"name": "make G1 seed 3", "method": "gen.make", "args": {"id": "G1", "seed": 3}}
+{"name": "make G1 seed 7", "method": "gen.make", "args": {"id": "G1", "seed": 7}}
+{"name": "make G1 seed 11", "method": "gen.make", "args": {"id": "G1", "seed": 11}}
+{"name": "make G1 seed 42", "method": "gen.make", "args": {"id": "G1", "seed": 42}}
+{"name": "make G1 seed 123456", "method": "gen.make", "args": {"id": "G1", "seed": 123456}}
+{"name": "make G1 seed 4000000000", "method": "gen.make", "args": {"id": "G1", "seed": 4000000000}}
+{"name": "make G2 seed 1", "method": "gen.make", "args": {"id": "G2", "seed": 1}}
+{"name": "make G2 seed 2", "method": "gen.make", "args": {"id": "G2", "seed": 2}}
+{"name": "make G2 seed 3", "method": "gen.make", "args": {"id": "G2", "seed": 3}}
+{"name": "make G2 seed 7", "method": "gen.make", "args": {"id": "G2", "seed": 7}}
+{"name": "make G2 seed 11", "method": "gen.make", "args": {"id": "G2", "seed": 11}}
+{"name": "make G2 seed 42", "method": "gen.make", "args": {"id": "G2", "seed": 42}}
+{"name": "make G2 seed 123456", "method": "gen.make", "args": {"id": "G2", "seed": 123456}}
+{"name": "make G2 seed 4000000000", "method": "gen.make", "args": {"id": "G2", "seed": 4000000000}}
+{"name": "make G3 seed 1", "method": "gen.make", "args": {"id": "G3", "seed": 1}}
+{"name": "make G3 seed 2", "method": "gen.make", "args": {"id": "G3", "seed": 2}}
+{"name": "make G3 seed 3", "method": "gen.make", "args": {"id": "G3", "seed": 3}}
+{"name": "make G3 seed 7", "method": "gen.make", "args": {"id": "G3", "seed": 7}}
+{"name": "make G3 seed 11", "method": "gen.make", "args": {"id": "G3", "seed": 11}}
+{"name": "make G3 seed 42", "method": "gen.make", "args": {"id": "G3", "seed": 42}}
+{"name": "make G3 seed 123456", "method": "gen.make", "args": {"id": "G3", "seed": 123456}}
+{"name": "make G3 seed 4000000000", "method": "gen.make", "args": {"id": "G3", "seed": 4000000000}}
+{"name": "make T1 seed 1", "method": "gen.make", "args": {"id": "T1", "seed": 1}}
+{"name": "make T1 seed 2", "method": "gen.make", "args": {"id": "T1", "seed": 2}}
+{"name": "make T1 seed 3", "method": "gen.make", "args": {"id": "T1", "seed": 3}}
+{"name": "make T1 seed 7", "method": "gen.make", "args": {"id": "T1", "seed": 7}}
+{"name": "make T1 seed 11", "method": "gen.make", "args": {"id": "T1", "seed": 11}}
+{"name": "make T1 seed 42", "method": "gen.make", "args": {"id": "T1", "seed": 42}}
+{"name": "make T1 seed 123456", "method": "gen.make", "args": {"id": "T1", "seed": 123456}}
+{"name": "make T1 seed 4000000000", "method": "gen.make", "args": {"id": "T1", "seed": 4000000000}}
+{"name": "make T2 seed 1", "method": "gen.make", "args": {"id": "T2", "seed": 1}}
+{"name": "make T2 seed 2", "method": "gen.make", "args": {"id": "T2", "seed": 2}}
+{"name": "make T2 seed 3", "method": "gen.make", "args": {"id": "T2", "seed": 3}}
+{"name": "make T2 seed 7", "method": "gen.make", "args": {"id": "T2", "seed": 7}}
+{"name": "make T2 seed 11", "method": "gen.make", "args": {"id": "T2", "seed": 11}}
+{"name": "make T2 seed 42", "method": "gen.make", "args": {"id": "T2", "seed": 42}}
+{"name": "make T2 seed 123456", "method": "gen.make", "args": {"id": "T2", "seed": 123456}}
+{"name": "make T2 seed 4000000000", "method": "gen.make", "args": {"id": "T2", "seed": 4000000000}}
+{"name": "make T3 seed 1", "method": "gen.make", "args": {"id": "T3", "seed": 1}}
+{"name": "make T3 seed 2", "method": "gen.make", "args": {"id": "T3", "seed": 2}}
+{"name": "make T3 seed 3", "method": "gen.make", "args": {"id": "T3", "seed": 3}}
+{"name": "make T3 seed 7", "method": "gen.make", "args": {"id": "T3", "seed": 7}}
+{"name": "make T3 seed 11", "method": "gen.make", "args": {"id": "T3", "seed": 11}}
+{"name": "make T3 seed 42", "method": "gen.make", "args": {"id": "T3", "seed": 42}}
+{"name": "make T3 seed 123456", "method": "gen.make", "args": {"id": "T3", "seed": 123456}}
+{"name": "make T3 seed 4000000000", "method": "gen.make", "args": {"id": "T3", "seed": 4000000000}}
+{"name": "make O1 seed 1", "method": "gen.make", "args": {"id": "O1", "seed": 1}}
+{"name": "make O1 seed 2", "method": "gen.make", "args": {"id": "O1", "seed": 2}}
+{"name": "make O1 seed 3", "method": "gen.make", "args": {"id": "O1", "seed": 3}}
+{"name": "make O1 seed 7", "method": "gen.make", "args": {"id": "O1", "seed": 7}}
+{"name": "make O1 seed 11", "method": "gen.make", "args": {"id": "O1", "seed": 11}}
+{"name": "make O1 seed 42", "method": "gen.make", "args": {"id": "O1", "seed": 42}}
+{"name": "make O1 seed 123456", "method": "gen.make", "args": {"id": "O1", "seed": 123456}}
+{"name": "make O1 seed 4000000000", "method": "gen.make", "args": {"id": "O1", "seed": 4000000000}}
+{"name": "make O2 seed 1", "method": "gen.make", "args": {"id": "O2", "seed": 1}}
+{"name": "make O2 seed 2", "method": "gen.make", "args": {"id": "O2", "seed": 2}}
+{"name": "make O2 seed 3", "method": "gen.make", "args": {"id": "O2", "seed": 3}}
+{"name": "make O2 seed 7", "method": "gen.make", "args": {"id": "O2", "seed": 7}}
+{"name": "make O2 seed 11", "method": "gen.make", "args": {"id": "O2", "seed": 11}}
+{"name": "make O2 seed 42", "method": "gen.make", "args": {"id": "O2", "seed": 42}}
+{"name": "make O2 seed 123456", "method": "gen.make", "args": {"id": "O2", "seed": 123456}}
+{"name": "make O2 seed 4000000000", "method": "gen.make", "args": {"id": "O2", "seed": 4000000000}}
+{"name": "make O3 seed 1", "method": "gen.make", "args": {"id": "O3", "seed": 1}}
+{"name": "make O3 seed 2", "method": "gen.make", "args": {"id": "O3", "seed": 2}}
+{"name": "make O3 seed 3", "method": "gen.make", "args": {"id": "O3", "seed": 3}}
+{"name": "make O3 seed 7", "method": "gen.make", "args": {"id": "O3", "seed": 7}}
+{"name": "make O3 seed 11", "method": "gen.make", "args": {"id": "O3", "seed": 11}}
+{"name": "make O3 seed 42", "method": "gen.make", "args": {"id": "O3", "seed": 42}}
+{"name": "make O3 seed 123456", "method": "gen.make", "args": {"id": "O3", "seed": 123456}}
+{"name": "make O3 seed 4000000000", "method": "gen.make", "args": {"id": "O3", "seed": 4000000000}}
+{"name": "make E1 seed 1", "method": "gen.make", "args": {"id": "E1", "seed": 1}}
+{"name": "make E1 seed 2", "method": "gen.make", "args": {"id": "E1", "seed": 2}}
+{"name": "make E1 seed 3", "method": "gen.make", "args": {"id": "E1", "seed": 3}}
+{"name": "make E1 seed 7", "method": "gen.make", "args": {"id": "E1", "seed": 7}}
+{"name": "make E1 seed 11", "method": "gen.make", "args": {"id": "E1", "seed": 11}}
+{"name": "make E1 seed 42", "method": "gen.make", "args": {"id": "E1", "seed": 42}}
+{"name": "make E1 seed 123456", "method": "gen.make", "args": {"id": "E1", "seed": 123456}}
+{"name": "make E1 seed 4000000000", "method": "gen.make", "args": {"id": "E1", "seed": 4000000000}}
+{"name": "make E2 seed 1", "method": "gen.make", "args": {"id": "E2", "seed": 1}}
+{"name": "make E2 seed 2", "method": "gen.make", "args": {"id": "E2", "seed": 2}}
+{"name": "make E2 seed 3", "method": "gen.make", "args": {"id": "E2", "seed": 3}}
+{"name": "make E2 seed 7", "method": "gen.make", "args": {"id": "E2", "seed": 7}}
+{"name": "make E2 seed 11", "method": "gen.make", "args": {"id": "E2", "seed": 11}}
+{"name": "make E2 seed 42", "method": "gen.make", "args": {"id": "E2", "seed": 42}}
+{"name": "make E2 seed 123456", "method": "gen.make", "args": {"id": "E2", "seed": 123456}}
+{"name": "make E2 seed 4000000000", "method": "gen.make", "args": {"id": "E2", "seed": 4000000000}}
+{"name": "make E3 seed 1", "method": "gen.make", "args": {"id": "E3", "seed": 1}}
+{"name": "make E3 seed 2", "method": "gen.make", "args": {"id": "E3", "seed": 2}}
+{"name": "make E3 seed 3", "method": "gen.make", "args": {"id": "E3", "seed": 3}}
+{"name": "make E3 seed 7", "method": "gen.make", "args": {"id": "E3", "seed": 7}}
+{"name": "make E3 seed 11", "method": "gen.make", "args": {"id": "E3", "seed": 11}}
+{"name": "make E3 seed 42", "method": "gen.make", "args": {"id": "E3", "seed": 42}}
+{"name": "make E3 seed 123456", "method": "gen.make", "args": {"id": "E3", "seed": 123456}}
+{"name": "make E3 seed 4000000000", "method": "gen.make", "args": {"id": "E3", "seed": 4000000000}}
+{"name": "make C1 seed 1", "method": "gen.make", "args": {"id": "C1", "seed": 1}}
+{"name": "make C1 seed 2", "method": "gen.make", "args": {"id": "C1", "seed": 2}}
+{"name": "make C1 seed 3", "method": "gen.make", "args": {"id": "C1", "seed": 3}}
+{"name": "make C1 seed 7", "method": "gen.make", "args": {"id": "C1", "seed": 7}}
+{"name": "make C1 seed 11", "method": "gen.make", "args": {"id": "C1", "seed": 11}}
+{"name": "make C1 seed 42", "method": "gen.make", "args": {"id": "C1", "seed": 42}}
+{"name": "make C1 seed 123456", "method": "gen.make", "args": {"id": "C1", "seed": 123456}}
+{"name": "make C1 seed 4000000000", "method": "gen.make", "args": {"id": "C1", "seed": 4000000000}}
+{"name": "make C2 seed 1", "method": "gen.make", "args": {"id": "C2", "seed": 1}}
+{"name": "make C2 seed 2", "method": "gen.make", "args": {"id": "C2", "seed": 2}}
+{"name": "make C2 seed 3", "method": "gen.make", "args": {"id": "C2", "seed": 3}}
+{"name": "make C2 seed 7", "method": "gen.make", "args": {"id": "C2", "seed": 7}}
+{"name": "make C2 seed 11", "method": "gen.make", "args": {"id": "C2", "seed": 11}}
+{"name": "make C2 seed 42", "method": "gen.make", "args": {"id": "C2", "seed": 42}}
+{"name": "make C2 seed 123456", "method": "gen.make", "args": {"id": "C2", "seed": 123456}}
+{"name": "make C2 seed 4000000000", "method": "gen.make", "args": {"id": "C2", "seed": 4000000000}}
+{"name": "make C3 seed 1", "method": "gen.make", "args": {"id": "C3", "seed": 1}}
+{"name": "make C3 seed 2", "method": "gen.make", "args": {"id": "C3", "seed": 2}}
+{"name": "make C3 seed 3", "method": "gen.make", "args": {"id": "C3", "seed": 3}}
+{"name": "make C3 seed 7", "method": "gen.make", "args": {"id": "C3", "seed": 7}}
+{"name": "make C3 seed 11", "method": "gen.make", "args": {"id": "C3", "seed": 11}}
+{"name": "make C3 seed 42", "method": "gen.make", "args": {"id": "C3", "seed": 42}}
+{"name": "make C3 seed 123456", "method": "gen.make", "args": {"id": "C3", "seed": 123456}}
+{"name": "make C3 seed 4000000000", "method": "gen.make", "args": {"id": "C3", "seed": 4000000000}}
+{"name": "make P1 seed 1", "method": "gen.make", "args": {"id": "P1", "seed": 1}}
+{"name": "make P1 seed 2", "method": "gen.make", "args": {"id": "P1", "seed": 2}}
+{"name": "make P1 seed 3", "method": "gen.make", "args": {"id": "P1", "seed": 3}}
+{"name": "make P1 seed 7", "method": "gen.make", "args": {"id": "P1", "seed": 7}}
+{"name": "make P1 seed 11", "method": "gen.make", "args": {"id": "P1", "seed": 11}}
+{"name": "make P1 seed 42", "method": "gen.make", "args": {"id": "P1", "seed": 42}}
+{"name": "make P1 seed 123456", "method": "gen.make", "args": {"id": "P1", "seed": 123456}}
+{"name": "make P1 seed 4000000000", "method": "gen.make", "args": {"id": "P1", "seed": 4000000000}}
+{"name": "make P2 seed 1", "method": "gen.make", "args": {"id": "P2", "seed": 1}}
+{"name": "make P2 seed 2", "method": "gen.make", "args": {"id": "P2", "seed": 2}}
+{"name": "make P2 seed 3", "method": "gen.make", "args": {"id": "P2", "seed": 3}}
+{"name": "make P2 seed 7", "method": "gen.make", "args": {"id": "P2", "seed": 7}}
+{"name": "make P2 seed 11", "method": "gen.make", "args": {"id": "P2", "seed": 11}}
+{"name": "make P2 seed 42", "method": "gen.make", "args": {"id": "P2", "seed": 42}}
+{"name": "make P2 seed 123456", "method": "gen.make", "args": {"id": "P2", "seed": 123456}}
+{"name": "make P2 seed 4000000000", "method": "gen.make", "args": {"id": "P2", "seed": 4000000000}}
+{"name": "make P3 seed 1", "method": "gen.make", "args": {"id": "P3", "seed": 1}}
+{"name": "make P3 seed 2", "method": "gen.make", "args": {"id": "P3", "seed": 2}}
+{"name": "make P3 seed 3", "method": "gen.make", "args": {"id": "P3", "seed": 3}}
+{"name": "make P3 seed 7", "method": "gen.make", "args": {"id": "P3", "seed": 7}}
+{"name": "make P3 seed 11", "method": "gen.make", "args": {"id": "P3", "seed": 11}}
+{"name": "make P3 seed 42", "method": "gen.make", "args": {"id": "P3", "seed": 42}}
+{"name": "make P3 seed 123456", "method": "gen.make", "args": {"id": "P3", "seed": 123456}}
+{"name": "make P3 seed 4000000000", "method": "gen.make", "args": {"id": "P3", "seed": 4000000000}}
+{"name": "make N1 seed 1", "method": "gen.make", "args": {"id": "N1", "seed": 1}}
+{"name": "make N1 seed 2", "method": "gen.make", "args": {"id": "N1", "seed": 2}}
+{"name": "make N1 seed 3", "method": "gen.make", "args": {"id": "N1", "seed": 3}}
+{"name": "make N1 seed 7", "method": "gen.make", "args": {"id": "N1", "seed": 7}}
+{"name": "make N1 seed 11", "method": "gen.make", "args": {"id": "N1", "seed": 11}}
+{"name": "make N1 seed 42", "method": "gen.make", "args": {"id": "N1", "seed": 42}}
+{"name": "make N1 seed 123456", "method": "gen.make", "args": {"id": "N1", "seed": 123456}}
+{"name": "make N1 seed 4000000000", "method": "gen.make", "args": {"id": "N1", "seed": 4000000000}}
+{"name": "make N2 seed 1", "method": "gen.make", "args": {"id": "N2", "seed": 1}}
+{"name": "make N2 seed 2", "method": "gen.make", "args": {"id": "N2", "seed": 2}}
+{"name": "make N2 seed 3", "method": "gen.make", "args": {"id": "N2", "seed": 3}}
+{"name": "make N2 seed 7", "method": "gen.make", "args": {"id": "N2", "seed": 7}}
+{"name": "make N2 seed 11", "method": "gen.make", "args": {"id": "N2", "seed": 11}}
+{"name": "make N2 seed 42", "method": "gen.make", "args": {"id": "N2", "seed": 42}}
+{"name": "make N2 seed 123456", "method": "gen.make", "args": {"id": "N2", "seed": 123456}}
+{"name": "make N2 seed 4000000000", "method": "gen.make", "args": {"id": "N2", "seed": 4000000000}}
+{"name": "make N3 seed 1", "method": "gen.make", "args": {"id": "N3", "seed": 1}}
+{"name": "make N3 seed 2", "method": "gen.make", "args": {"id": "N3", "seed": 2}}
+{"name": "make N3 seed 3", "method": "gen.make", "args": {"id": "N3", "seed": 3}}
+{"name": "make N3 seed 7", "method": "gen.make", "args": {"id": "N3", "seed": 7}}
+{"name": "make N3 seed 11", "method": "gen.make", "args": {"id": "N3", "seed": 11}}
+{"name": "make N3 seed 42", "method": "gen.make", "args": {"id": "N3", "seed": 42}}
+{"name": "make N3 seed 123456", "method": "gen.make", "args": {"id": "N3", "seed": 123456}}
+{"name": "make N3 seed 4000000000", "method": "gen.make", "args": {"id": "N3", "seed": 4000000000}}
+{"name": "make S1 seed 1", "method": "gen.make", "args": {"id": "S1", "seed": 1}}
+{"name": "make S1 seed 2", "method": "gen.make", "args": {"id": "S1", "seed": 2}}
+{"name": "make S1 seed 3", "method": "gen.make", "args": {"id": "S1", "seed": 3}}
+{"name": "make S1 seed 7", "method": "gen.make", "args": {"id": "S1", "seed": 7}}
+{"name": "make S1 seed 11", "method": "gen.make", "args": {"id": "S1", "seed": 11}}
+{"name": "make S1 seed 42", "method": "gen.make", "args": {"id": "S1", "seed": 42}}
+{"name": "make S1 seed 123456", "method": "gen.make", "args": {"id": "S1", "seed": 123456}}
+{"name": "make S1 seed 4000000000", "method": "gen.make", "args": {"id": "S1", "seed": 4000000000}}
+{"name": "make S2 seed 1", "method": "gen.make", "args": {"id": "S2", "seed": 1}}
+{"name": "make S2 seed 2", "method": "gen.make", "args": {"id": "S2", "seed": 2}}
+{"name": "make S2 seed 3", "method": "gen.make", "args": {"id": "S2", "seed": 3}}
+{"name": "make S2 seed 7", "method": "gen.make", "args": {"id": "S2", "seed": 7}}
+{"name": "make S2 seed 11", "method": "gen.make", "args": {"id": "S2", "seed": 11}}
+{"name": "make S2 seed 42", "method": "gen.make", "args": {"id": "S2", "seed": 42}}
+{"name": "make S2 seed 123456", "method": "gen.make", "args": {"id": "S2", "seed": 123456}}
+{"name": "make S2 seed 4000000000", "method": "gen.make", "args": {"id": "S2", "seed": 4000000000}}
+{"name": "make S3 seed 1", "method": "gen.make", "args": {"id": "S3", "seed": 1}}
+{"name": "make S3 seed 2", "method": "gen.make", "args": {"id": "S3", "seed": 2}}
+{"name": "make S3 seed 3", "method": "gen.make", "args": {"id": "S3", "seed": 3}}
+{"name": "make S3 seed 7", "method": "gen.make", "args": {"id": "S3", "seed": 7}}
+{"name": "make S3 seed 11", "method": "gen.make", "args": {"id": "S3", "seed": 11}}
+{"name": "make S3 seed 42", "method": "gen.make", "args": {"id": "S3", "seed": 42}}
+{"name": "make S3 seed 123456", "method": "gen.make", "args": {"id": "S3", "seed": 123456}}
+{"name": "make S3 seed 4000000000", "method": "gen.make", "args": {"id": "S3", "seed": 4000000000}}
+{"name": "templates", "method": "gen.templates", "args": {}}
+{"name": "topics", "method": "gen.topics", "args": {}}
+{"name": "vectors", "method": "gen.vectors", "args": {}}
+{"name": "format 0", "method": "gen.format", "args": {"x": 0}}
+{"name": "format 1", "method": "gen.format", "args": {"x": 1}}
+{"name": "format -1", "method": "gen.format", "args": {"x": -1}}
+{"name": "format 0.5", "method": "gen.format", "args": {"x": 0.5}}
+{"name": "format 12345.678", "method": "gen.format", "args": {"x": 12345.678}}
+{"name": "format 99999.5", "method": "gen.format", "args": {"x": 99999.5}}
+{"name": "format 100000", "method": "gen.format", "args": {"x": 100000}}
+{"name": "format 123456", "method": "gen.format", "args": {"x": 123456}}
+{"name": "format 0.001", "method": "gen.format", "args": {"x": 0.001}}
+{"name": "format 0.000999", "method": "gen.format", "args": {"x": 0.000999}}
+{"name": "format 0.00123456", "method": "gen.format", "args": {"x": 0.00123456}}
+{"name": "format 1e+21", "method": "gen.format", "args": {"x": 1e+21}}
+{"name": "format 3.14159265", "method": "gen.format", "args": {"x": 3.14159265}}
+{"name": "format 2.5e-07", "method": "gen.format", "args": {"x": 2.5e-07}}
+{"name": "format 1234567890123", "method": "gen.format", "args": {"x": 1234567890123}}
+{"name": "format 33.599999999999994", "method": "gen.format", "args": {"x": 33.599999999999994}}
+{"name": "format 1718.1", "method": "gen.format", "args": {"x": 1718.1}}
+{"name": "format 0.3333333333333333", "method": "gen.format", "args": {"x": 0.3333333333333333}}
+{"name": "format 0.6666666666666666", "method": "gen.format", "args": {"x": 0.6666666666666666}}
+{"name": "format 2700000.0", "method": "gen.format", "args": {"x": 2700000.0}}
+{"name": "hash32 ''", "method": "gen.hash32", "args": {"s": ""}}
+{"name": "hash32 'a'", "method": "gen.hash32", "args": {"s": "a"}}
+{"name": "hash32 'hello'", "method": "gen.hash32", "args": {"s": "hello"}}
+{"name": "hash32 'Ω μC ⁻¹'", "method": "gen.hash32", "args": {"s": "Ω μC ⁻¹"}}
+{"name": "hash32 'abcabcabcabc'", "method": "gen.hash32", "args": {"s": "abcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabc"}}
+{"name": "hash32 'emoji 😀 ok'", "method": "gen.hash32", "args": {"s": "emoji 😀 ok"}}
+{"name": "demoBank None None 11", "method": "gen.demoBank", "args": {"seed": 11}}
+{"name": "demoBank 2006 2026 11", "method": "gen.demoBank", "args": {"seed": 11, "y0": 2006, "y1": 2026}}
+{"name": "demoBank 2010 2020 5", "method": "gen.demoBank", "args": {"seed": 5, "y0": 2010, "y1": 2020}}
+{"name": "demoBank 1996 2025 3", "method": "gen.demoBank", "args": {"seed": 3, "y0": 1996, "y1": 2025}}
+{"name": "demoBank 2000 2000 1", "method": "gen.demoBank", "args": {"seed": 1, "y0": 2000, "y1": 2000}}
+{"name": "questionWith K1", "method": "gen.questionWith", "args": {"id": "K1", "params": {"v": 30}, "seed": 5}}
+{"name": "questionWith E3", "method": "gen.questionWith", "args": {"id": "E3", "params": {"pm": 4, "E": 2000, "th": 37}, "seed": 9}}
+{"name": "unknown template", "method": "gen.make", "args": {"id": "ZZ", "seed": 1}, "error": true}
